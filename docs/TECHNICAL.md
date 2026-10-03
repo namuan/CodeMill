@@ -275,6 +275,94 @@ Optimize for **minimum sufficient evidence**, not maximum context-window utiliza
 
 If the budget is exceeded, discard lower-ranked evidence rather than truncating high-value fragments blindly.
 
+### 6.6 Persistent state and compaction
+
+Working context is disposable. Persistent state is structured.
+
+CodeMill maintains three distinct sources of durable state:
+
+- **repository state:** the current workspace is authoritative; retrieve current source rather than trusting prose summaries of code;
+- **task state:** original task/criteria/constraints plus concise records of verified sub-tasks and their dependencies;
+- **learning state:** scoped, evidence-backed facts, conventions, decisions, and failure learnings that may help later work.
+
+There is a hard invariant:
+
+> **No correctness dependency on LLM conversation history.**
+
+Every model operation must be reproducible from the current repository and explicit CodeMill state. A later sub-task can therefore use a fresh llama.cpp request/session without receiving previous prompts or transcripts.
+
+After each verified sub-task, run a COMPACT transition:
+
+```text
+VERIFIED
+   |
+ COMPACT
+   +-- record verified behavior
+   +-- record accepted test
+   +-- record changed files/symbols
+   +-- record verification evidence
+   +-- extract reusable scoped learnings
+   +-- discard old packed contexts/prompts
+   +-- discard superseded diagnostics
+   +-- discard failed patch bodies
+   |
+next SubTask
+```
+
+A verified-slice record should be compact enough to retrieve as prerequisite context without replacing current source as truth.
+
+### 6.7 Learning store
+
+Do not append every failure to every future prompt. Convert only useful evidence into typed learnings and retrieve them when their scope intersects the current sub-task/evidence graph.
+
+Initial learning kinds:
+
+```text
+repository_fact
+convention
+decision
+failure_learning
+verification_fact
+constraint
+```
+
+A learning should carry:
+
+```text
+id
+kind
+statement
+scope.paths
+scope.symbols
+scope.concepts
+derived_from_subtask
+repository_revision
+evidence
+confidence
+superseded_by
+```
+
+For example, a failed implementation that reveals a generic exception handler breaks an existing malformed-token behavior can become a scoped failure learning for that handler/symbol. The failed patch itself is not durable context.
+
+Retrieval precedence is:
+
+```text
+current repository evidence
+    > recent verified fact/decision
+    > verified scoped learning
+    > older/inferred learning
+```
+
+Learnings are candidates, not authority. If current source or newer verification contradicts a learning, prefer current evidence and mark the older learning superseded.
+
+This produces a bounded context lifecycle:
+
+```text
+GATHER -> RANK -> PACK -> MODEL -> VERIFY -> COMPACT
+   ^                                      |
+   +------ current repo + run state ------+
+```
+
 ## 7. Retrieval tools and workspace
 
 CodeMill uses **ast-grep as the primary retrieval engine for source code**. ast-grep provides syntax/AST-aware structural matching and structured result ranges suitable for deterministic context construction. It is used for retrieval only; its rewrite functionality is not part of CodeMill's mutation path.
@@ -480,7 +568,7 @@ The same local model initially performs DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT
 
 ## 16. Observability and evaluation
 
-Persist original task/repository SHA, decomposition graph, sub-task transitions, context fragment IDs, tool calls/durations, patch hashes, verifier results, tokens, repair counts, and final diff/status.
+Persist original task/repository SHA, decomposition graph, sub-task transitions, context fragment IDs, packed-context manifests, verified-slice records, scoped learning IDs/provenance/supersession, tool calls/durations, patch hashes, verifier results, tokens, repair counts, and final diff/status.
 
 Do not require hidden model reasoning. Store decisions, evidence, actions, and outcomes.
 
