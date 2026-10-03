@@ -90,7 +90,7 @@ See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
 CodeMill uses **uv** for Python and dependency management, with `pyproject.toml` as the project configuration.
 
-Requires Python 3.11+ and uv.
+Requires Python 3.11+, uv, and a locally running llama.cpp `llama-server`. CodeMill initially assumes the server is already running at `http://127.0.0.1:9090`; model loading and model paths are owned by llama-server, not CodeMill.
 
 ```bash
 uv sync
