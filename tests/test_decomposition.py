@@ -2,8 +2,13 @@ import json
 
 import pytest
 
-from codemill.decomposition import DECOMPOSITION_JSON_SCHEMA, parse_decomposition
-from codemill.models import ExpectedScope
+from codemill.decomposition import (
+    DECOMPOSITION_JSON_SCHEMA,
+    DECOMPOSITION_REVIEW_JSON_SCHEMA,
+    parse_decomposition,
+    parse_decomposition_review,
+)
+from codemill.models import DecompositionReview, ExpectedScope
 
 
 def valid_payload():
@@ -86,3 +91,20 @@ def test_rejects_invalid_scope_values():
 def test_rejects_malformed_json():
     with pytest.raises(ValueError, match="invalid decomposition JSON"):
         parse_decomposition("not json")
+
+
+def test_parses_structured_quality_review():
+    review = parse_decomposition_review(
+        '{"accepted": false, "findings": ["slices are separated by layer"]}'
+    )
+
+    assert review == DecompositionReview(False, ("slices are separated by layer",))
+
+
+def test_quality_review_schema_is_closed():
+    assert DECOMPOSITION_REVIEW_JSON_SCHEMA["additionalProperties"] is False
+
+
+def test_rejects_quality_review_without_findings():
+    with pytest.raises(ValueError, match="rejected review must include findings"):
+        parse_decomposition_review('{"accepted": false, "findings": []}')

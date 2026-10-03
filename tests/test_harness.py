@@ -3,7 +3,6 @@ from dataclasses import asdict
 
 from codemill.harness import CodingHarness
 from codemill.models import (
-    DecompositionReview,
     RunStatus,
     SubTask,
     Task,
@@ -35,7 +34,7 @@ class FakeModel:
         return json.dumps({"subtasks": items})
 
     def review_decomposition(self, task, subtasks, tools):
-        return DecompositionReview(True)
+        return json.dumps({"accepted": True, "findings": []})
 
     def locate_and_plan(self, task, tools): return f"plan {task.id}"
     def create_patch(self, task, plan, tools): return f"patch {task.id}"
@@ -103,10 +102,32 @@ def test_escalates_on_malformed_structured_decomposition_before_mutation():
     assert result.events[-1].name == "run_escalated"
 
 
+def test_escalates_on_malformed_decomposition_review_before_mutation():
+    class MalformedReviewModel(FakeModel):
+        def review_decomposition(self, task, subtasks, tools):
+            return '{"accepted": "yes", "findings": []}'
+
+    tools = FakeTools()
+    result = CodingHarness(
+        MalformedReviewModel(),
+        tools,
+        SequenceVerifier([]),
+    ).run(Task("feature"))
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.diagnostics
+    assert tools.patches == []
+
+
 def test_escalates_when_decomposition_quality_review_rejects_plan():
     class RejectingModel(FakeModel):
         def review_decomposition(self, task, subtasks, tools):
-            return DecompositionReview(False, ("subtasks are split by technical layer",))
+            return json.dumps(
+                {
+                    "accepted": False,
+                    "findings": ["subtasks are split by technical layer"],
+                }
+            )
 
     tools = FakeTools()
     result = CodingHarness(

@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 from uuid import uuid4
 
-from .decomposition import parse_decomposition
+from .decomposition import parse_decomposition, parse_decomposition_review
 from .models import (
-    DecompositionReview,
     RunEvent,
     RunResult,
     RunStatus,
@@ -48,13 +47,21 @@ class CodingHarness:
         events.append(self._event(run_id, "decompose_completed"))
         events.append(self._event(run_id, "decomposition_review_started"))
         try:
-            review = self.model.review_decomposition(task, subtasks, self.tools)
-            if not isinstance(review, DecompositionReview):
-                raise TypeError("decomposition review must return DecompositionReview")
+            review_response = self.model.review_decomposition(task, subtasks, self.tools)
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
             events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
             return RunResult(RunStatus.FAILED, 0, run_id, diagnostics, tuple(events))
+
+        try:
+            review = parse_decomposition_review(review_response)
+        except ValueError as error:
+            diagnostics = (str(error),)
+            events.append(
+                self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
+            )
+            events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
 
         if not review.accepted:
             diagnostics = review.findings or ("decomposition quality review rejected the plan",)

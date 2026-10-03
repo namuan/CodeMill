@@ -1,7 +1,21 @@
 import json
 from typing import Any
 
-from .models import ExpectedScope, SubTask
+from .models import DecompositionReview, ExpectedScope, SubTask
+
+
+DECOMPOSITION_REVIEW_JSON_SCHEMA = {
+    "type": "object",
+    "required": ["accepted", "findings"],
+    "additionalProperties": False,
+    "properties": {
+        "accepted": {"type": "boolean"},
+        "findings": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+        },
+    },
+}
 
 
 DECOMPOSITION_JSON_SCHEMA = {
@@ -81,6 +95,29 @@ def parse_decomposition(payload: str) -> tuple[SubTask, ...]:
         _parse_subtask(value, f"subtasks[{index}]")
         for index, value in enumerate(subtasks_value)
     )
+
+
+def parse_decomposition_review(payload: str) -> DecompositionReview:
+    if not isinstance(payload, str):
+        raise ValueError("decomposition review response must be JSON text")
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid decomposition review JSON: {error.msg}") from error
+
+    review = _require_object(document, "decomposition review")
+    _reject_unknown_fields(review, {"accepted", "findings"}, "decomposition review")
+    accepted = _require_boolean(
+        _require_field(review, "accepted", "decomposition review"),
+        "decomposition review.accepted",
+    )
+    findings = _require_string_array(
+        _require_field(review, "findings", "decomposition review"),
+        "decomposition review.findings",
+    )
+    if not accepted and not findings:
+        raise ValueError("rejected review must include findings")
+    return DecompositionReview(accepted, findings)
 
 
 def _parse_subtask(value: Any, path: str) -> SubTask:
