@@ -53,6 +53,12 @@ class DecompositionReview:
 
 
 @dataclass(frozen=True)
+class VerificationTarget:
+    paths: tuple[str, ...]
+    selectors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ProtectedTests:
     paths: tuple[str, ...]
     fingerprint: str

@@ -10,6 +10,7 @@ from codemill.models import (
     VerificationFailureKind,
     VerificationPurpose,
     VerificationResult,
+    VerificationTarget,
 )
 
 
@@ -19,15 +20,20 @@ class FakeTools:
         self.freeze_calls = 0
         self.test_protection = None
         self.production_protections = []
+        self.current_test_target = None
 
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
     def git_diff(self): return "diff"
-    def apply_test_patch(self, patch): self.patches.append(f"test:{patch}")
+    def apply_test_patch(self, patch):
+        self.patches.append(f"test:{patch}")
+        subtask_id = patch.rsplit(" ", 1)[-1]
+        self.current_test_target = VerificationTarget((f"tests/test_{subtask_id}.py",))
+        return self.current_test_target
 
     def freeze_tests(self):
         self.freeze_calls += 1
-        self.test_protection = ProtectedTests(("tests/test_ST-001.py",), "test-fingerprint")
+        self.test_protection = ProtectedTests(self.current_test_target.paths, "test-fingerprint")
         return self.test_protection
 
     def apply_production_patch(self, patch, protected_tests):
@@ -68,10 +74,32 @@ class SequenceVerifier:
     def __init__(self, results):
         self.results = iter(results)
         self.purposes = []
+        self.targets = []
 
-    def verify(self, purpose):
+    def verify(self, purpose, target=None):
         self.purposes.append(purpose)
+        self.targets.append((purpose, target))
         return next(self.results)
+
+
+def test_red_and_green_verify_the_same_focused_test_target():
+    tools = FakeTools()
+    verifier = SequenceVerifier([
+        VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+    ])
+
+    CodingHarness(FakeModel(), tools, verifier).run(Task("feature"))
+
+    target = VerificationTarget(("tests/test_ST-001.py",))
+    assert verifier.targets == [
+        (VerificationPurpose.RED, target),
+        (VerificationPurpose.GREEN, target),
+        (VerificationPurpose.REGRESSION, None),
+        (VerificationPurpose.FINAL, None),
+    ]
 
 
 def test_repairs_subtask_then_runs_final_verification():
@@ -374,7 +402,7 @@ def test_records_final_verification_errors_as_failed_runs():
         def __init__(self):
             self.calls = 0
 
-        def verify(self, purpose):
+        def verify(self, purpose, target=None):
             self.calls += 1
             if purpose is VerificationPurpose.RED:
                 return VerificationResult(

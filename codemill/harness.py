@@ -12,6 +12,7 @@ from .models import (
     VerificationFailureKind,
     VerificationPurpose,
     VerificationResult,
+    VerificationTarget,
 )
 from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
@@ -159,11 +160,13 @@ class CodingHarness:
 
             events.append(self._event(run_id, "test_write_started", task.id))
             test_patch = self.model.create_test_patch(task, plan, self.tools)
-            self.tools.apply_test_patch(test_patch)
+            test_target = self.tools.apply_test_patch(test_patch)
+            if not isinstance(test_target, VerificationTarget):
+                raise TypeError("test patch application must return a VerificationTarget")
             events.append(self._event(run_id, "test_patch_applied", task.id))
 
             events.append(self._event(run_id, "red_verify_started", task.id))
-            red = self.verifier.verify(VerificationPurpose.RED)
+            red = self.verifier.verify(VerificationPurpose.RED, test_target)
             if red.ok or red.failure_kind is not VerificationFailureKind.EXPECTED_BEHAVIOR:
                 diagnostics = red.diagnostics or (
                     "focused test did not fail for the expected missing behavior",
@@ -193,7 +196,7 @@ class CodingHarness:
 
             while True:
                 events.append(self._event(run_id, "green_verify_started", task.id))
-                result = self.verifier.verify(VerificationPurpose.GREEN)
+                result = self.verifier.verify(VerificationPurpose.GREEN, test_target)
                 if result.ok:
                     events.append(
                         self._event(run_id, "green_verify_passed", task.id, result.diagnostics)

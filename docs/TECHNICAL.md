@@ -425,7 +425,7 @@ ast-grep understands local syntax structure but is not treated as a semantic typ
 Mutation/execution capabilities are harness-only:
 
 ```text
-apply_test_patch(diff)
+apply_test_patch(diff) -> VerificationTarget(paths, selectors)
 freeze_tests() -> ProtectedTests(paths, fingerprint)
 apply_production_patch(diff, protected_tests)
 git_diff(scope)
@@ -495,7 +495,7 @@ The harness requests the smallest focused test that demonstrates the slice's obs
 
 ### RED is mandatory
 
-The harness requests and applies a focused test patch before requesting any implementation patch, then calls the verifier with purpose `RED`. The verifier result distinguishes an expected missing-behavior failure from other failures. RED is accepted only when the test fails with the expected behavior classification. A passing test, syntax error, broken fixture, or unrelated failure escalates without calling IMPLEMENT. GREEN and final verification use distinct verifier purposes so their results cannot be mistaken for RED evidence.
+The harness requests and applies a focused test patch before requesting any implementation patch. Test application returns a `VerificationTarget` identifying the accepted test paths/selectors. The verifier receives that same target for both RED and GREEN, with distinct verification purposes. RED is accepted only when the result classifies the failure as the expected missing behavior. A passing test, syntax error, broken fixture, or unrelated failure escalates without calling IMPLEMENT. Regression and final verification use their own purposes and do not reuse the focused-test target.
 
 If the test already passes, the harness must revise the test when the acceptance criterion is not actually covered, mark the slice already satisfied when evidence supports that conclusion, or escalate ambiguity. It must not manufacture production changes merely to create work.
 
