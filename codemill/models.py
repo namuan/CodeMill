@@ -35,6 +35,12 @@ class Task:
 
 
 @dataclass(frozen=True)
+class DecompositionReview:
+    accepted: bool
+    findings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class VerificationResult:
     ok: bool
     diagnostics: tuple[str, ...] = ()

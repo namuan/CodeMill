@@ -64,6 +64,8 @@ DECOMPOSITION_JSON_SCHEMA = {
 
 
 def parse_decomposition(payload: str) -> tuple[SubTask, ...]:
+    if not isinstance(payload, str):
+        raise ValueError("decomposition response must be JSON text")
     try:
         document = json.loads(payload)
     except json.JSONDecodeError as error:

@@ -1,5 +1,14 @@
+import json
+from dataclasses import asdict
+
 from codemill.harness import CodingHarness
-from codemill.models import RunStatus, SubTask, Task, VerificationResult
+from codemill.models import (
+    DecompositionReview,
+    RunStatus,
+    SubTask,
+    Task,
+    VerificationResult,
+)
 
 
 class FakeTools:
@@ -16,7 +25,17 @@ class FakeModel:
         self.subtasks = subtasks or (SubTask("ST-001", "fix bug"),)
 
     def decompose(self, task, tools):
-        return self.subtasks
+        items = []
+        for subtask in self.subtasks:
+            item = asdict(subtask)
+            item["acceptance_criteria"] = item["acceptance_criteria"] or [
+                f"subtask completes: {subtask.objective}"
+            ]
+            items.append(item)
+        return json.dumps({"subtasks": items})
+
+    def review_decomposition(self, task, subtasks, tools):
+        return DecompositionReview(True)
 
     def locate_and_plan(self, task, tools): return f"plan {task.id}"
     def create_patch(self, task, plan, tools): return f"patch {task.id}"
@@ -64,6 +83,42 @@ def test_executes_dependency_ordered_subtasks():
     assert result.status is RunStatus.VERIFIED
     assert tools.patches == ["patch ST-001", "patch ST-002"]
     assert [item.subtask_id for item in result.subtasks] == ["ST-001", "ST-002"]
+
+
+def test_escalates_on_malformed_structured_decomposition_before_mutation():
+    class MalformedModel(FakeModel):
+        def decompose(self, task, tools):
+            return '{"subtasks": [{"id": "ST-001"}]}'
+
+    tools = FakeTools()
+    result = CodingHarness(
+        MalformedModel(),
+        tools,
+        SequenceVerifier([]),
+    ).run(Task("feature"))
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.diagnostics
+    assert tools.patches == []
+    assert result.events[-1].name == "run_escalated"
+
+
+def test_escalates_when_decomposition_quality_review_rejects_plan():
+    class RejectingModel(FakeModel):
+        def review_decomposition(self, task, subtasks, tools):
+            return DecompositionReview(False, ("subtasks are split by technical layer",))
+
+    tools = FakeTools()
+    result = CodingHarness(
+        RejectingModel(),
+        tools,
+        SequenceVerifier([]),
+    ).run(Task("feature"))
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.diagnostics == ("subtasks are split by technical layer",)
+    assert tools.patches == []
+    assert "decomposition_review_rejected" in [event.name for event in result.events]
 
 
 def test_escalates_on_unmet_dependency():

@@ -122,7 +122,8 @@ The decomposition JSON schema is strict: required fields and types are checked, 
 The model adapter exposes specialised semantic operations:
 
 ```text
-decompose(task, tools) -> SubTask[]
+decompose(task, tools) -> structured JSON text
+review_decomposition(task, subtasks, tools) -> structured quality decision
 locate(subtask, tools) -> evidence requests
 write_test(subtask, context) -> test patch
 implement(subtask, failing_test, context) -> production patch
@@ -167,9 +168,9 @@ Target structured output:
 }
 ```
 
-Before execution CodeMill validates unique IDs, dependency existence, acyclicity, topological ordering, non-empty objectives, and usable acceptance criteria.
+Before execution CodeMill parses the structured JSON against the strict decomposition contract, then validates unique IDs, dependency existence, acyclicity, topological ordering, non-empty objectives, and usable acceptance criteria. A malformed response or invalid graph is rejected before repository mutation.
 
-The decomposer proposes the graph; the orchestrator owns whether that graph is executable.
+The decomposer proposes the graph; the orchestrator owns whether that graph is executable. A separate `review_decomposition` operation evaluates whether slices are independently verifiable vertical behaviors rather than horizontal layer tasks or bundles of unrelated work. Rejection escalates before any repository mutation. Acceptance is evidence for planning quality, not a substitute for deterministic verification of implemented behavior.
 
 ### Decomposition quality validation
 

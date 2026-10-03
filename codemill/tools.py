@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import SubTask, Task
+from .models import DecompositionReview, SubTask, Task
 
 
 class CodingTools(Protocol):
@@ -14,7 +14,10 @@ class CodingTools(Protocol):
 class ModelDriver(Protocol):
     """Inference adapter; concrete model backends stay outside the core loop."""
 
-    def decompose(self, task: Task, tools: CodingTools) -> tuple[SubTask, ...]: ...
+    def decompose(self, task: Task, tools: CodingTools) -> str: ...
+    def review_decomposition(
+        self, task: Task, subtasks: tuple[SubTask, ...], tools: CodingTools
+    ) -> DecompositionReview: ...
     def locate_and_plan(self, task: SubTask, tools: CodingTools) -> str: ...
     def create_patch(self, task: SubTask, plan: str, tools: CodingTools) -> str: ...
     def repair_patch(self, task: SubTask, diagnostics: tuple[str, ...], tools: CodingTools) -> str: ...

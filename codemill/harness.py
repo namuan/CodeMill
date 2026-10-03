@@ -1,7 +1,16 @@
 from dataclasses import dataclass
 from uuid import uuid4
 
-from .models import RunEvent, RunResult, RunStatus, SubTask, SubTaskResult, Task
+from .decomposition import parse_decomposition
+from .models import (
+    DecompositionReview,
+    RunEvent,
+    RunResult,
+    RunStatus,
+    SubTask,
+    SubTaskResult,
+    Task,
+)
 from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
 from .verifier import Verifier
@@ -21,14 +30,14 @@ class CodingHarness:
         events = [self._event(run_id, "run_started")]
         events.append(self._event(run_id, "decompose_started"))
         try:
-            proposed_subtasks = self.model.decompose(task, self.tools)
+            response = self.model.decompose(task, self.tools)
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
             events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
             return RunResult(RunStatus.FAILED, 0, run_id, diagnostics, tuple(events))
 
-        events.append(self._event(run_id, "decompose_completed"))
         try:
+            proposed_subtasks = parse_decomposition(response)
             subtasks = order_subtasks(proposed_subtasks)
         except ValueError as error:
             diagnostics = (str(error),)
@@ -36,6 +45,26 @@ class CodingHarness:
             events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
             return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
 
+        events.append(self._event(run_id, "decompose_completed"))
+        events.append(self._event(run_id, "decomposition_review_started"))
+        try:
+            review = self.model.review_decomposition(task, subtasks, self.tools)
+            if not isinstance(review, DecompositionReview):
+                raise TypeError("decomposition review must return DecompositionReview")
+        except Exception as error:
+            diagnostics = self._exception_diagnostic(error)
+            events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
+            return RunResult(RunStatus.FAILED, 0, run_id, diagnostics, tuple(events))
+
+        if not review.accepted:
+            diagnostics = review.findings or ("decomposition quality review rejected the plan",)
+            events.append(
+                self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
+            )
+            events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
+
+        events.append(self._event(run_id, "decomposition_review_accepted"))
         events.append(self._event(run_id, "plan_validated"))
         results: list[SubTaskResult] = []
         attempts = 0
