@@ -9,12 +9,22 @@ class RunStatus(str, Enum):
 
 
 @dataclass(frozen=True)
+class ExpectedScope:
+    max_files: int = 3
+    max_changed_lines: int = 100
+    allow_dependencies: bool = False
+    allow_public_api: bool = False
+    allow_schema_changes: bool = False
+
+
+@dataclass(frozen=True)
 class SubTask:
     id: str
     objective: str
     acceptance_criteria: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
+    expected_scope: ExpectedScope = field(default_factory=ExpectedScope)
 
 
 @dataclass(frozen=True)

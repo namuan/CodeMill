@@ -110,9 +110,14 @@ objective
 acceptance_criteria
 constraints
 depends_on
+expected_scope.max_files
+expected_scope.max_changed_lines
+expected_scope.allow_dependencies
+expected_scope.allow_public_api
+expected_scope.allow_schema_changes
 ```
 
-Planned additions include expected files/symbols, risk class, and change budget.
+The decomposition JSON schema is strict: required fields and types are checked, unknown fields are rejected, and acceptance criteria must be non-empty. Graph validation separately checks IDs and dependencies before deterministic scheduling. Vertical-slice quality remains a semantic review concern; structural validation must not pretend to prove that a proposed slice is minimal or behaviorally coherent.
 
 The model adapter exposes specialised semantic operations:
 

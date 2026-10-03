@@ -65,6 +65,10 @@ Enforce the **vertical-slice invariant**:
 
 The decomposition test is: **Can this slice be made smaller while every resulting piece still has its own observable verification condition?**
 
+The machine validator enforces schema completeness, field types, non-empty behavioral acceptance criteria, expected-scope bounds, unique IDs, known dependencies, acyclicity, and deterministic ordering. It does not claim to prove semantic minimality: ambiguous or suspicious vertical-slice plans are surfaced for model review or escalation, not silently accepted as verified quality.
+
+**Exit:** structured model output is parsed and validated before execution; malformed plans cannot mutate the repository; graph scheduling is deterministic; semantic quality concerns produce a review/escalation outcome.
+
 ## Phase 2 — Harness-enforced TDD
 
 Make TDD a state-machine invariant rather than a prompt convention.
