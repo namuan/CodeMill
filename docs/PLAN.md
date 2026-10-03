@@ -4,100 +4,123 @@
 
 Build a specialised coding harness that makes small language models useful for real repository-level software development.
 
-CodeMill begins every developer task by decomposing it into **minimal, dependency-aware, independently verifiable vertical slices**. Each sub-task then runs through the same bounded coding cycle:
+CodeMill decomposes every developer task into **minimal, dependency-aware, independently verifiable vertical slices**. Each slice is then implemented using **harness-enforced test-driven development**:
 
 ```text
-LOCATE -> PLAN -> PATCH -> VERIFY -> REVIEW
-                         ^       |
-                         + REPAIR+
+LOCATE/GATHER
+ -> WRITE_MINIMAL_TEST
+ -> CONFIRM_RED
+ -> IMPLEMENT_MINIMUM
+ -> CONFIRM_GREEN
+ -> REGRESSION_VERIFY
+ -> MINIMALITY_REVIEW
+ -> VERIFIED
 ```
 
-Only verified sub-tasks unlock their dependents. After every sub-task completes, CodeMill runs final verification against the original task and acceptance criteria.
+If GREEN is not reached, bounded REPAIR attempts modify implementation code only. Only verified slices unlock their dependents. After every slice completes, CodeMill runs final verification against the original task and acceptance criteria.
 
-The primary success metric is **cost per independently verified correct task**, with sub-task success and repair behavior recorded as diagnostic metrics.
+The primary success metric is **cost per independently verified correct task**.
 
 ## Phase 0 — Decomposition-aware bootstrap
 
-Define task, sub-task, dependency, result, model, tool, and verifier contracts.
+Define task, sub-task, dependency, result, model, tool, and verifier contracts. Implement decomposition, dependency-ordered execution, bounded repair, and final whole-task verification.
 
-Implement:
+**Exit:** fake-model tests demonstrate decomposition, dependency ordering, repair, and final verification.
 
-- `DECOMPOSE` as the first model operation;
-- dependency-ordered sub-task execution;
-- per-sub-task `LOCATE -> PLAN -> PATCH -> VERIFY -> REPAIR -> REVIEW`;
-- bounded repair attempts per sub-task;
-- final whole-task verification;
-- escalation for invalid/unmet dependency plans.
+## Phase 1 — Structured vertical-slice decomposition
 
-**Exit:** fake model tests demonstrate decomposition, dependency ordering, per-sub-task repair, and final verification.
+Replace free-form decomposition with schema-constrained output. A sub-task must contain stable ID, observable behavior, acceptance criteria, constraints, dependency IDs, and expected scope/change budget.
 
-## Phase 1 — Structured decomposition protocol
+Validate graph mechanics: unique IDs, existing dependencies, no cycles, deterministic topological order.
 
-Replace free-form decomposition with schema-constrained output. A sub-task must contain:
+Enforce the **vertical-slice invariant**:
 
-- stable ID;
-- objective;
-- observable acceptance criteria;
-- constraints;
-- dependency IDs;
-- expected scope/change budget.
+1. Each slice delivers one observable behavior.
+2. It includes every technical-layer change necessary to expose that behavior.
+3. A slice is split further only if every child remains independently and meaningfully verifiable.
+4. Reject layer-oriented decomposition when the pieces only become useful together.
+5. Reject slices that restate the original task or bundle unrelated behaviors.
 
-Validate the graph before execution: unique IDs, existing dependencies, no cycles, and deterministic topological order.
+The decomposition test is: **Can this slice be made smaller while every resulting piece still has its own observable verification condition?**
 
-Add decomposition quality rules built around the **vertical-slice invariant**: each sub-task delivers one observable behavior through all technical layers needed to verify it. Tests belong to the slice rather than becoming a separate horizontal task. Split a slice further only when every resulting slice remains independently and meaningfully verifiable. Reject layer-oriented plans such as “add database field”, “add service”, “add endpoint”, and “add tests” when those pieces only become meaningful together.\n\nThe decomposition test is: **Can this slice be made smaller while every resulting piece still has its own observable verification condition?** If yes, split it. If no, keep it as the minimal vertical slice.
+## Phase 2 — Harness-enforced TDD
 
-## Phase 2 — Local repository tools
+Make TDD a state-machine invariant rather than a prompt convention.
 
-Implement safe deterministic tools: ripgrep search, ranged reads, tree/symbol discovery, references/tests, validated unified-diff application, and Git diff/status inspection.
+For every sub-task:
 
-Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, and no arbitrary shell exposed to the model.
+1. **WRITE_MINIMAL_TEST** — create the smallest focused test expressing the observable acceptance criterion.
+2. **CONFIRM_RED** — run that test against the current verified repository state.
+3. Require failure for the expected behavioral reason. A passing test provides no evidence that implementation is needed; revise the test or escalate.
+4. Freeze/protect the accepted test.
+5. **IMPLEMENT_MINIMUM** — ask the coding model for the smallest production-code change that can satisfy the failing test.
+6. **CONFIRM_GREEN** — rerun the focused test.
+7. On failure, enter bounded **REPAIR** using diagnostics while keeping the test immutable.
+8. **REGRESSION_VERIFY** — run affected/existing checks to ensure the minimal implementation did not break verified behavior.
+9. **MINIMALITY_REVIEW** — reject unnecessary production code, speculative abstractions, unrelated refactors, extra APIs, or behavior not justified by the slice/test.
 
-## Phase 3 — Verification pipeline
+A sub-task becomes VERIFIED only after RED was demonstrated, GREEN was reached, regression checks passed, and minimality review accepted the diff.
 
-For every sub-task run cheapest checks first: patch validity, formatter, linter/static checks, compiler/type checker, targeted behavioral tests, affected tests, and diff policy review. Verification must prove the slice's observable behavior, not merely that its implementation layers compile.
+## Phase 3 — Local repository tools
 
-Final task verification then runs the checks needed to prove the combined changes satisfy the original acceptance criteria.
+Implement safe deterministic tools: ripgrep search, ranged reads, tree/symbol discovery, references/tests, validated unified-diff application, Git diff/status inspection, and targeted test execution.
+
+Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, no arbitrary shell, and protection preventing implementation turns from modifying the accepted test.
+
+## Phase 4 — Verification pipeline
+
+Separate verification purposes:
+
+- **RED verification:** prove the new behavioral test fails for the intended missing behavior.
+- **GREEN verification:** prove the minimal implementation satisfies that focused test.
+- **Regression verification:** prove previously verified behavior still passes.
+- **Final verification:** prove all slices compose to satisfy the original task.
 
 Normalize failures before returning them to REPAIR.
 
-## Phase 4 — Context engine
+## Phase 5 — Context engine
 
-Index files, symbols, definitions, imports, references, tests, repository conventions, and selected Git history. Start without embeddings.
+Build context **per vertical slice**. Context may cross layers when required by the behavior. Rank acceptance criteria, target behavior, existing related tests, interfaces, direct dependencies, and verified prerequisite changes.
 
-Build context **per sub-task**, not per original task. Rank target definitions, interfaces, tests, direct dependencies, and changes produced by prerequisite sub-tasks. Every fragment records provenance and `why_selected`.
+Test generation and implementation generation should receive different context packs. Implementation receives the accepted failing test as an immutable specification.
 
-## Phase 5 — 9B model adapter
+## Phase 6 — 9B model adapter
 
-Add an OpenAI-compatible local inference adapter for local serving stacks.
+Add an OpenAI-compatible local inference adapter.
 
-Keep model operations specialised: **DECOMPOSE, LOCATE, PLAN, PATCH, REPAIR, REVIEW**. Prefer schema-constrained output. Evaluate each operation independently so model weaknesses can be attributed to decomposition, navigation, generation, or repair.
+Keep operations specialised: **DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, REVIEW**. Prefer schema-constrained output and evaluate each operation independently.
 
-## Phase 6 — Change budgets and escalation
+The implementation instruction is intentionally narrow: make the accepted failing test pass with the smallest production-code change; do not modify the test; do not implement behavior not required by the slice.
 
-Apply budgets per sub-task and across the whole task: files/LOC, dependencies, public APIs, schemas, generated files, and sensitive paths. A vertical slice may legitimately touch multiple layers/files; budgets must not force horizontal decomposition.
+## Phase 7 — Change budgets and escalation
 
-Escalate when decomposition is invalid, policy is exceeded, context remains ambiguous, repairs oscillate, verification is unavailable, or the task requires unsupported capabilities.
+Apply budgets per slice and across the task. A vertical slice may legitimately touch multiple layers; budgets must not force horizontal decomposition.
 
-## Phase 7 — Evaluation
+Reject or escalate when the implementation changes the protected test, exceeds scope, introduces unjustified dependencies/APIs/schema changes, cannot demonstrate RED, repeatedly fails GREEN, or requires unsupported capabilities.
 
-Build tasks from historical commits: checkout N-1, provide original issue/PR intent without commit N, let CodeMill decompose and execute, then run public and hidden verification.
+## Phase 8 — Evaluation
 
-Track task success plus decomposition metrics: number of sub-tasks, dependency depth, failed/replanned sub-tasks, verification isolation, unnecessary edits, tokens/tool calls per sub-task, repairs, wall/GPU time, escalation, and human intervention.
+Build tasks from historical commits and evaluate the full decomposition-to-TDD workflow.
+
+Track task success plus: slice count/depth, RED validity, tests that unexpectedly pass, GREEN attempts, test-mutation attempts, implementation LOC/files, unnecessary-code findings, regression failures, tokens/tool calls, latency/GPU time, escalation, and human intervention.
 
 Compare small-model+harness runs with stronger-model baselines under equivalent verification.
 
-## Phase 8 — Learning from traces
+## Phase 9 — Learning from traces
 
-Once evaluation data exists, analyze decomposition, navigation, generation, and repair failure modes separately. Then consider trajectory distillation, SFT/LoRA, or verifier-driven optimization.
+Analyze decomposition, test-generation, implementation, and repair failures separately before considering trajectory distillation, SFT/LoRA, or verifier-driven optimization.
 
 Fine-tuning is an optimization step, not the starting architecture.
 
 ## Near-term backlog
 
-1. Formal `SubTask`/decomposition JSON schema and graph validator.\n2. Vertical-slice quality validator/rules.
-2. Structured event/trace format keyed by task and sub-task.
-3. Filesystem sandbox + ripgrep adapter.
-4. Unified-diff parser + per-sub-task/whole-task change budgets.
-5. Allowlisted subprocess verifier with targeted and final modes.
-6. OpenAI-compatible local model adapter.
-7. Fixture repository + first decomposition-to-verification benchmark.
+1. Formal SubTask/decomposition JSON schema and graph validator.
+2. Vertical-slice quality validator/rules.
+3. TDD state model: WRITE_TEST, RED, IMPLEMENT, GREEN, REGRESSION, MINIMALITY_REVIEW.
+4. Protected-test patch policy.
+5. Structured event/trace format keyed by task and sub-task.
+6. Filesystem sandbox + ripgrep adapter.
+7. Unified-diff parser + per-slice/whole-task change budgets.
+8. Allowlisted targeted/regression verifier.
+9. OpenAI-compatible local model adapter.
+10. Fixture repository + first decomposition-to-TDD benchmark.
