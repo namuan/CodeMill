@@ -1,20 +1,22 @@
 # CodeMill
 
-**A verification-first coding harness for small language models.**
+**A verification-first, test-driven coding harness for small language models.**
 
-CodeMill explores how small coding models (initially around 9B parameters) can perform useful repository-level software engineering by first decomposing a developer task into the **smallest independently verifiable vertical slices**, then executing each change with strong context selection, constrained actions, deterministic verification, and bounded repair.
+CodeMill explores how small coding models (initially around 9B parameters) can perform useful repository-level software engineering by decomposing a developer task into the **smallest independently verifiable vertical slices**, then executing each slice under a harness-enforced TDD cycle.
 
 ## Design principles
 
-- **Decompose into vertical slices.** Each sub-task delivers one observable behavior through whatever layers are required to verify it.\n- **Smallest independently verifiable unit.** Split further only when every resulting slice still has a meaningful observable verification condition.\n- **Avoid horizontal decomposition.** Database, service, API, UI, or tests are not separate sub-tasks merely because they are separate technical layers.\n- **Verification belongs to the slice.** Production changes and the focused tests proving them normally live in the same sub-task.
-- **One bounded cycle per sub-task.** Each sub-task gets its own locate, plan, patch, verify, repair, and review cycle.
+- **Decompose into vertical slices.** Each sub-task delivers one observable behavior through whatever layers are required to verify it.
+- **Smallest independently verifiable unit.** Split further only when every resulting slice still has a meaningful observable verification condition.
+- **Avoid horizontal decomposition.** Database, service, API, UI, or tests are not separate sub-tasks merely because they are separate technical layers.
+- **Harness-enforced TDD.** CodeMill writes the minimal behavioral test first and proves it fails before implementation begins.
+- **Tests are immutable during implementation.** The implementation model fixes production code; it does not weaken or rewrite the test to obtain GREEN.
+- **Minimal implementation.** Add only the production behavior required to make the new test pass. No speculative abstractions, unrelated refactors, or extra behavior.
+- **GREEN is not enough.** Run regression checks and review the diff for unnecessary implementation after the focused test passes.
 - **Small tasks, strong context.** Retrieve only code needed for the current sub-task.
 - **Tools over guessing.** Search, inspect, patch, test, and compile through explicit tools.
-- **Verification over confidence.** A sub-task is not complete until deterministic checks pass.
-- **Minimal diffs.** Prefer the smallest change satisfying the sub-task.
 - **Verify composition.** After all sub-tasks pass, verify the complete repository against the original task.
 - **Bounded autonomy.** Limit repairs and escalate ambiguous/high-risk work.
-- **Measure real engineering.** Optimize for verified tasks, cost, latency, and human intervention.
 
 ## Workflow
 
@@ -27,15 +29,27 @@ Developer Task
      v
 Minimal independently verifiable vertical slices
      |
-     +--> ST-001: LOCATE -> PLAN -> PATCH -> VERIFY
-     |                                  ^       |
-     |                                  + REPAIR+
-     |                                      |
-     |                                   REVIEW
+     +--> SubTask
+     |      |
+     |   LOCATE / GATHER
+     |      |
+     |   WRITE MINIMAL TEST
+     |      |
+     |   CONFIRM RED -------- test passes already --> REVISE / ESCALATE
+     |      |
+     |   IMPLEMENT MINIMUM
+     |      |
+     |   CONFIRM GREEN
+     |      | fail
+     |    REPAIR
+     |      |
+     |   REGRESSION VERIFY
+     |      |
+     |   MINIMALITY REVIEW
+     |      |
+     |   VERIFIED
      |
-     +--> ST-002: LOCATE -> PLAN -> PATCH -> VERIFY -> REVIEW
-     |
-    ...
+    ... next ready SubTask
      |
      v
 FINAL VERIFY
@@ -44,7 +58,11 @@ FINAL VERIFY
 Result / Escalation
 ```
 
-A sub-task is the **smallest vertical slice of behavior that can be meaningfully verified on its own**. It may cross storage, domain, API, UI, and test layers when those changes are jointly required to expose one observable behavior. Sub-tasks declare dependencies, and CodeMill only executes a sub-task after its dependencies have verified.
+A sub-task is the **smallest vertical slice of behavior that can be meaningfully verified on its own**. It may cross storage, domain, API, UI, and test layers when those changes are jointly required to expose one observable behavior.
+
+For every slice, CodeMill owns the TDD sequence. It creates the smallest test that expresses the slice's acceptance criterion, confirms the test fails for the expected reason, and only then asks the coding model for the smallest production change that makes it pass. The test is protected during implementation.
+
+Sub-tasks declare dependencies, and CodeMill only executes a sub-task after its dependencies have verified.
 
 ## Repository layout
 
@@ -64,7 +82,7 @@ tests/
 
 ## Status
 
-CodeMill is at **v0 / bootstrap**. The current core models task decomposition, dependency-ordered sub-task execution, bounded repair loops, and final verification. The next milestone is a structured decomposition protocol that enforces the vertical-slice invariant.
+CodeMill is at **v0 / bootstrap**. The current core models decomposition, dependency-ordered sub-task execution, bounded repair loops, and final verification. The next milestone is encoding the vertical-slice and RED/GREEN/minimality invariants directly in the harness.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
