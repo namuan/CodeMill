@@ -45,16 +45,26 @@ Original Task
 
 A small model should not carry the full cognitive burden of a large software task through every generation turn. DECOMPOSE converts the original request into bounded units with explicit success conditions.
 
+The fundamental invariant is:
+
+> **A sub-task is the smallest independently verifiable vertical slice of the original task.**
+
 A valid sub-task should be:
 
-- **minimal:** no unrelated behavior bundled into it;
-- **coherent:** one meaningful repository change;
+- **vertical:** delivers one observable behavior through every technical layer required for that behavior;
+- **minimal:** cannot be split further without producing pieces that lack meaningful independent verification;
+- **coherent:** contains one behavior rather than unrelated changes;
 - **independently verifiable:** has an observable success condition;
-- **dependency-aware:** names prerequisite sub-tasks;
+- **verification-complete:** focused tests/checks proving the behavior belong to the slice;
+- **dependency-aware:** names prerequisite slices;
 - **bounded:** carries an expected change scope;
 - **composable:** completion advances the original task.
 
-Minimal does not mean one-line edits. Splitting below the level at which useful verification is possible is counterproductive.
+Minimal does not mean one file, one layer, or one-line edits. A slice may change persistence, domain logic, API/UI code, and tests together when all are required for one observable behavior.
+
+Horizontal decomposition is an anti-pattern when the pieces are not independently meaningful. Avoid separate tasks such as "add database field", "add service method", "add endpoint", and "add tests" when none represents a useful verified behavior alone.
+
+The decomposition test is: **Can this slice be made smaller while every resulting piece still has an independently observable verification condition?** If yes, split it. If no, it is a candidate minimal vertical slice.
 
 ## 3. Core contracts
 
@@ -123,6 +133,36 @@ Target structured output:
 Before execution CodeMill validates unique IDs, dependency existence, acyclicity, topological ordering, non-empty objectives, and usable acceptance criteria.
 
 The decomposer proposes the graph; the orchestrator owns whether that graph is executable.
+
+### Decomposition quality validation
+
+Graph validity is necessary but not sufficient. CodeMill should also validate or review decomposition quality:
+
+- every slice states an observable behavior;
+- acceptance criteria verify behavior rather than implementation steps;
+- tests are not standalone sub-tasks unless the test artifact itself is the requested behavior;
+- technical layers are combined when jointly necessary for verification;
+- unrelated behaviors are not bundled into one slice;
+- a proposed split is accepted only when all children remain independently verifiable.
+
+Undesirable horizontal decomposition:
+
+```text
+ST-001 Add database column
+ST-002 Add repository method
+ST-003 Add API serialization
+ST-004 Add tests
+```
+
+Preferred vertical decomposition:
+
+```text
+ST-001 Expose the new field through the API
+       Changes: persistence + mapping + serialization + focused test
+       Verify: API response returns the field correctly
+```
+
+Additional observable behavior becomes another vertical slice.
 
 ## 5. Scheduling and repository state
 
