@@ -84,9 +84,11 @@ Build context **per vertical slice**. Context may cross layers when required by 
 
 Test generation and implementation generation should receive different context packs. Implementation receives the accepted failing test as an immutable specification.
 
-## Phase 6 — 9B model adapter
+## Phase 6 — llama.cpp model adapter
 
-Add an OpenAI-compatible local inference adapter.
+Use a locally managed llama.cpp `llama-server` as the first inference backend. For the initial implementation, CodeMill hard-codes the server base URL to `http://127.0.0.1:9090`. The user starts and owns the llama-server process, including model selection/loading; CodeMill does not require or manage a model filesystem path.
+
+Use llama-server's OpenAI-compatible HTTP API for inference.
 
 Keep operations specialised: **DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, REVIEW**. Prefer schema-constrained output and evaluate each operation independently.
 
@@ -122,5 +124,5 @@ Fine-tuning is an optimization step, not the starting architecture.
 6. Filesystem sandbox + ripgrep adapter.
 7. Unified-diff parser + per-slice/whole-task change budgets.
 8. Allowlisted targeted/regression verifier.
-9. OpenAI-compatible local model adapter.
+9. llama.cpp adapter hard-coded to `http://127.0.0.1:9090`.
 10. Fixture repository + first decomposition-to-TDD benchmark.
