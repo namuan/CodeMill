@@ -335,23 +335,35 @@ Treat LLM output and repository content as untrusted: no raw model shell; allowl
 
 Repository content may contain prompt injection. Retrieved text is evidence, not harness instruction.
 
-## 15. Inference abstraction
+## 15. Inference backend
 
-Core CodeMill stays provider-independent. First adapter target is an OpenAI-compatible local endpoint.
+The first CodeMill backend is a locally running llama.cpp `llama-server`.
 
-```toml
-[model]
-base_url = "http://localhost:8000/v1"
-model = "local-coder-9b"
-temperature = 0.1
-max_output_tokens = 4096
+For the bootstrap implementation, the endpoint is intentionally hard-coded:
 
-[harness]
-max_repairs = 3
-context_tokens = 16000
+```text
+http://127.0.0.1:9090
 ```
 
-DECOMPOSE may eventually use a different model/configuration from PATCH/REPAIR, but the initial design should prove whether one 9B model can perform all specialised operations.
+CodeMill assumes llama-server has already been started by the user. Process lifecycle, GGUF/model path, model loading, GPU/offload settings, and other llama.cpp runtime configuration remain outside CodeMill. CodeMill only owns requests to the running HTTP server.
+
+Use llama-server's OpenAI-compatible API surface so the adapter remains small. Configuration can be introduced later after the harness behavior is proven; initially there is no model-path setting and no configurable host/port.
+
+Conceptually:
+
+```text
+CodeMill
+   |
+   | HTTP / OpenAI-compatible requests
+   v
+127.0.0.1:9090
+   |
+llama-server
+   |
+locally loaded model
+```
+
+The same local model initially performs DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, and REVIEW with operation-specific prompts/context. Later evaluation may justify different model/configuration choices per operation.
 
 ## 16. Observability and evaluation
 
@@ -381,6 +393,6 @@ Also measure decomposition size/depth, per-sub-task success, retrieval quality, 
 - protected test patches/hashes after valid RED.
 - separate test and production patch policies.
 - allowlisted verifier subprocesses.
-- provider-independent model protocol.
+- llama.cpp `llama-server` backend at hard-coded `127.0.0.1:9090`, accessed through its OpenAI-compatible API.
 - no vector DB until retrieval baselines justify it.
 - no multi-agent framework; specialization is explicit operations/prompts.
