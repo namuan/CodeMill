@@ -109,6 +109,12 @@ After CONFIRM_RED, treat failure evidence as a new retrieval signal. Stack frame
 
 Every context fragment records path/range, symbols when applicable, kind, why it was selected, retrieval source, and score. Deduplicate overlapping ranges and enforce a strict token budget. The objective is **minimum sufficient evidence**, not filling the model's available context window.
 
+Context must not grow monotonically across sub-tasks. Treat every model invocation as a fresh call whose working context is reconstructed from the current repository plus explicit persistent run state. No correctness behavior may depend on llama.cpp conversation history.
+
+After a sub-task verifies, run **COMPACT**. Persist a concise verified-slice record (behavior, accepted test, changed files/symbols, verification result), durable decisions/constraints, and only reusable evidence-backed learnings from failed attempts. Discard transient prompts, previous packed contexts, superseded diagnostics, and failed patch bodies.
+
+Learnings are retrieved on demand rather than injected globally. Each learning carries kind, statement, file/symbol/concept scope, evidence/provenance, originating sub-task/repository revision, confidence, and supersession state. Current repository evidence outranks stored learnings; newer verified facts can supersede older entries.
+
 ## Phase 6 — llama.cpp model adapter
 
 Use a locally managed llama.cpp `llama-server` as the first inference backend. For the initial implementation, CodeMill hard-codes the server base URL to `http://127.0.0.1:9090`. The user starts and owns the llama-server process, including model selection/loading; CodeMill does not require or manage a model filesystem path.
@@ -145,9 +151,10 @@ Fine-tuning is an optimization step, not the starting architecture.
 2. Vertical-slice quality validator/rules.
 3. TDD state model: WRITE_TEST, RED, IMPLEMENT, GREEN, REGRESSION, MINIMALITY_REVIEW.
 4. Protected-test patch policy.
-5. Structured event/trace format keyed by task and sub-task.
-6. Filesystem sandbox + ast-grep structural retrieval adapter + rg textual fallback.
-7. Unified-diff parser + per-slice/whole-task change budgets.
-8. Allowlisted targeted/regression verifier.
-9. llama.cpp adapter hard-coded to `http://127.0.0.1:9090`.
-10. Fixture repository + first decomposition-to-TDD benchmark.
+5. Persistent run-state + COMPACT lifecycle + scoped learning store.
+6. Structured event/trace format keyed by task and sub-task.
+7. Filesystem sandbox + ast-grep structural retrieval adapter + rg textual fallback.
+8. Unified-diff parser + per-slice/whole-task change budgets.
+9. Allowlisted targeted/regression verifier.
+10. llama.cpp adapter hard-coded to `http://127.0.0.1:9090`.
+11. Fixture repository + first decomposition-to-TDD benchmark.
