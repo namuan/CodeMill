@@ -1,54 +1,156 @@
 # CodeMill Technical Design
 
-## 1. System boundary
+## 1. System boundary and execution hierarchy
 
-CodeMill orchestrates a small coding model. The model never receives unrestricted repository or shell access. It requests evidence and mutations through constrained capabilities; CodeMill owns execution, policy, and verification.
+CodeMill is a hierarchical orchestrator around a small coding model. The model never receives unrestricted repository or shell access.
 
-```text
-Task -> Normalize -> Locate/Plan <- Repository Index
-                         |
-                         v
-                   Context Packer
-                         |
-                         v
-                       Coder
-                         |
-                         v
-                  Patch Policy
-                    |       |
-                 accept   reject/escalate
-                    |
-                    v
-                 Workspace
-                    |
-                    v
-                  Verifier
-                 /        \
-              pass        fail
-               |            |
-             Review       Repair
-               |            |
-               +------------+
-                    |
-                    v
-          Verified / Escalated
-```
-
-## 2. Core contracts
-
-A `Task` contains an objective, observable acceptance criteria, and constraints. Future versions add immutable task ID, repository revision, risk class, and change budget.
-
-The model adapter exposes semantic operations instead of generic chat:
+The outer loop reasons about **work decomposition and composition**. The inner loop solves one minimal sub-task at a time.
 
 ```text
-locate_and_plan(task, tools) -> plan
-create_patch(task, plan, tools) -> patch
-repair_patch(task, diagnostics, tools) -> patch
+Original Task
+     |
+ NORMALIZE
+     |
+ DECOMPOSE <------ Repository summary
+     |
+ validate dependency graph
+     |
+     v
++---------------------------------------+
+| Next ready SubTask                    |
+|                                       |
+| LOCATE -> PLAN -> GATHER -> PATCH     |
+|                           |           |
+|                     POLICY_CHECK      |
+|                           |           |
+|                        VERIFY         |
+|                      /        \       |
+|                   pass        fail    |
+|                    |            |     |
+|                  REVIEW       REPAIR -+
++---------------------------------------+
+     |
+     | verified; unlock dependents
+     v
+ next ready SubTask
+     |
+     v
+ FINAL_VERIFY(original acceptance criteria)
+     |
+     v
+ VERIFIED / ESCALATED / FAILED
 ```
 
-The bootstrap combines LOCATE and PLAN. Split them once retrieval exists so navigation can be evaluated independently.
+## 2. Why decomposition is first-class
 
-The initial tool surface is deliberately tiny:
+A small model should not carry the full cognitive burden of a large software task through every generation turn. DECOMPOSE converts the original request into bounded units with explicit success conditions.
+
+A valid sub-task should be:
+
+- **minimal:** no unrelated behavior bundled into it;
+- **coherent:** one meaningful repository change;
+- **independently verifiable:** has an observable success condition;
+- **dependency-aware:** names prerequisite sub-tasks;
+- **bounded:** carries an expected change scope;
+- **composable:** completion advances the original task.
+
+Minimal does not mean one-line edits. Splitting below the level at which useful verification is possible is counterproductive.
+
+## 3. Core contracts
+
+`Task` contains the original objective, acceptance criteria, and constraints.
+
+`SubTask` contains:
+
+```text
+id
+objective
+acceptance_criteria
+constraints
+depends_on
+```
+
+Planned additions include expected files/symbols, risk class, and change budget.
+
+The model adapter exposes semantic operations:
+
+```text
+decompose(task, tools) -> SubTask[]
+locate(subtask, tools) -> evidence requests
+plan(subtask, context) -> bounded plan
+create_patch(subtask, plan, tools) -> patch
+repair_patch(subtask, diagnostics, tools) -> patch
+review(subtask, diff, verification) -> review
+```
+
+The bootstrap currently combines LOCATE and PLAN; they will split when retrieval is implemented.
+
+## 4. Decomposition protocol
+
+DECOMPOSE receives the original task, acceptance criteria, constraints, and a lightweight repository summary. It should not receive the entire repository.
+
+Target structured output:
+
+```json
+{
+  "subtasks": [
+    {
+      "id": "ST-001",
+      "objective": "Add token validation primitive",
+      "acceptance_criteria": ["valid tokens return decoded claims"],
+      "constraints": ["no new runtime dependency"],
+      "depends_on": [],
+      "expected_scope": {
+        "max_files": 2,
+        "max_changed_lines": 80
+      }
+    },
+    {
+      "id": "ST-002",
+      "objective": "Use token validation in request middleware",
+      "acceptance_criteria": ["invalid tokens produce an unauthorized response"],
+      "constraints": [],
+      "depends_on": ["ST-001"],
+      "expected_scope": {
+        "max_files": 3,
+        "max_changed_lines": 100
+      }
+    }
+  ]
+}
+```
+
+Before execution CodeMill validates unique IDs, dependency existence, acyclicity, topological ordering, non-empty objectives, and usable acceptance criteria.
+
+The decomposer proposes the graph; the orchestrator owns whether that graph is executable.
+
+## 5. Scheduling and repository state
+
+Execute only a sub-task whose dependencies are VERIFIED. Initially use deterministic sequential topological execution.
+
+Each verified sub-task changes the workspace seen by later sub-tasks. This is intentional: dependent work should build on verified repository state rather than stale original state.
+
+Parallel execution may be explored later only for independent sub-tasks with isolated workspaces and an explicit merge/reverification strategy.
+
+## 6. Context packing
+
+Context is built **per sub-task**. Priority:
+
+1. target symbols;
+2. relevant interfaces/types;
+3. tests covering the target;
+4. direct callers;
+5. direct dependencies;
+6. verified changes from prerequisite sub-tasks;
+7. analogous implementations;
+8. repository conventions;
+9. relevant history/docs.
+
+Every fragment records path, range, symbols, `why_selected`, and provenance. Deduplicate ranges and reserve output budget.
+
+## 7. Tools and workspace
+
+Initial capability surface:
 
 ```text
 search_text(query)
@@ -56,50 +158,13 @@ read_file(path, start?, end?)
 apply_patch(patch)
 ```
 
-Planned read operations include tree listing, symbol search/definition, references, tests, history, and diff inspection. Mutation should remain narrow: prefer one validated patch operation over arbitrary writes.
+Planned read capabilities include tree listing, symbol lookup, references, tests, history, and diff inspection.
 
-## 3. Model protocol
+Pin the input commit and use a disposable worktree/container. Normalize paths relative to repository root; reject symlink escape and traversal. The LLM never receives a raw shell capability.
 
-Each turn receives a role-specific instruction, task envelope, selected evidence, explicit constraints, and machine-readable output schema.
+## 8. Patch policy and budgets
 
-Example LOCATE output:
-
-```json
-{
-  "target_symbols": ["PaymentClient.request"],
-  "files_to_read": ["src/payment/client.py"],
-  "tests_to_read": ["tests/payment/test_client.py"],
-  "searches": ["RetryPolicy"],
-  "uncertainties": ["Where retry configuration is sourced"]
-}
-```
-
-PATCH should ultimately return a unified diff plus metadata, never prose mixed into the patch.
-
-## 4. Context packing
-
-Treat context as a scarce resource. Suggested priority:
-
-1. target symbol;
-2. interfaces/types;
-3. tests covering target;
-4. direct callers;
-5. direct dependencies;
-6. analogous implementations;
-7. repository conventions;
-8. relevant history/docs.
-
-Each fragment records path, line range, symbols, content, and `why_selected`. Deduplicate overlapping ranges and reserve output tokens for the patch.
-
-## 5. Workspace
-
-Pin the input commit and use a disposable worktree/container. Apply candidate changes there, verify there, retain diff + trace, and discard or promote only after success.
-
-Normalize all paths relative to repository root; reject symlink escape and `../` traversal.
-
-## 6. Patch policy
-
-Parse every candidate diff before mutation and enforce a change budget such as:
+Enforce budgets both per sub-task and cumulatively:
 
 ```json
 {
@@ -111,64 +176,65 @@ Parse every candidate diff before mutation and enforce a change budget such as:
 }
 ```
 
-Hard violations reject or escalate. Initially disallow binary changes and sensitive repository metadata/secrets edits.
+Hard violations reject or escalate. Initially disallow binary changes and sensitive metadata/secrets edits. Optionally require edits to intersect the sub-task's planned scope.
 
-## 7. Verification
+## 9. Verification at two levels
 
-Verification is deterministic and cheapest-first:
+### Sub-task verification
+
+Answers: **does this repository state correctly complete this sub-task without breaking the current verified state?**
+
+Run cheapest-first: patch validation, format, lint/static checks, typecheck/compile, targeted tests, then affected tests.
+
+A sub-task does not unlock dependents until verification passes.
+
+### Final task verification
+
+After all sub-tasks verify, evaluate the combined repository against the **original task and acceptance criteria**. Run integration/broader checks needed to detect composition failures that isolated verification cannot catch.
+
+Final failure must not be silently attributed to the last sub-task. The trace should preserve evidence needed for future diagnosis/replanning.
+
+## 10. Repair
+
+REPAIR operates within one sub-task. Supply original task context, current sub-task, current diff, failing stage, normalized diagnostics, relevant local source, verified prerequisite changes, and remaining budget.
+
+It is not a fresh solve. Require the smallest correction. Default target is at most three repair turns; detect identical failures and patch oscillation.
+
+## 11. Review
+
+REVIEW is distinct from deterministic verification. It checks scope and intent: unnecessary changes, violation of the sub-task plan, accidental API expansion, suspicious deletion, or behavior not covered by verification.
+
+Reviewer output should be structured and advisory/policy-driven, not a replacement for tests or compilers.
+
+## 12. State and failure semantics
+
+Outer states:
 
 ```text
-patch validation
- -> format/check
- -> lint/static analysis
- -> typecheck/compile
- -> targeted tests
- -> affected-package tests
- -> optional broader suite
+NORMALIZE -> DECOMPOSE -> VALIDATE_GRAPH -> EXECUTE_SUBTASKS
+ -> FINAL_VERIFY -> VERIFIED
 ```
 
-Normalize diagnostics into stage, command ID, path, line, code, and message. Keep raw logs in traces; give the repair model compact diagnostics and only locally relevant source.
-
-## 8. Repair
-
-Repair is not a fresh solve. Supply original task, current diff, failing stage, normalized diagnostics, local source, and remaining budget. Require the smallest correction preserving working portions.
-
-Default target: at most three repair turns. Detect repeated diagnostics and patch oscillation and escalate early.
-
-## 9. State machine
-
-Current:
+Sub-task states:
 
 ```text
-LOCATE -> PATCH -> VERIFY
-                    | pass -> VERIFIED
-                    | fail
-                    v
-                  REPAIR -> VERIFY
-                    |
-                    +-- budget exhausted -> EXHAUSTED
+PENDING -> LOCATE -> PLAN -> GATHER -> PATCH -> POLICY_CHECK
+ -> VERIFY -> REPAIR* -> REVIEW -> VERIFIED
 ```
 
-Target states: NORMALIZE, LOCATE, PLAN, GATHER, PATCH, POLICY_CHECK, VERIFY, REPAIR, REVIEW, VERIFIED, ESCALATED, FAILED. Every transition emits a structured event.
+Terminal alternatives include EXHAUSTED, ESCALATED, and FAILED.
 
-## 10. Security
+Every transition emits a structured event keyed by run ID and sub-task ID.
 
-Treat both LLM output and repository content as untrusted.
+## 13. Security
 
-- no raw model shell;
-- subprocess commands come from allowlisted configuration;
-- time/memory limits;
-- network off by default during verification;
-- filtered environment;
-- no secrets in model context;
-- disposable filesystem workspace;
-- validate every mutation before application.
+Treat LLM output and repository content as untrusted: no raw model shell; allowlisted subprocess commands; time/memory limits; network off by default; filtered environment; no secrets in model context; disposable workspace; validated mutations.
 
-Repository comments/docs may contain prompt injection. Retrieved code is evidence, not instruction; harness policy outranks repository text.
+Repository content may contain prompt injection. Retrieved text is evidence, not harness instruction.
 
-## 11. Inference abstraction
+## 14. Inference abstraction
 
-Core CodeMill stays provider-independent. First adapter target: an OpenAI-compatible local endpoint.
+Core CodeMill stays provider-independent. First adapter target is an OpenAI-compatible local endpoint.
 
 ```toml
 [model]
@@ -182,19 +248,17 @@ max_repairs = 3
 context_tokens = 16000
 ```
 
-No provider SDK belongs in the core state machine.
+DECOMPOSE may eventually use a different model/configuration from PATCH/REPAIR, but the initial design should prove whether one 9B model can perform all specialised operations.
 
-## 12. Observability
+## 15. Observability and evaluation
 
-Persist task/repository SHA, operation names, context fragment IDs, tool calls/durations, patch hashes, verifier results, token counts, repair count, and final diff/status.
+Persist original task/repository SHA, decomposition graph, sub-task transitions, context fragment IDs, tool calls/durations, patch hashes, verifier results, tokens, repair counts, and final diff/status.
 
 Do not require hidden model reasoning. Store decisions, evidence, actions, and outcomes.
 
-## 13. Evaluation
+A run succeeds only when final required and hidden checks pass. Historical-patch similarity is diagnostic, not correctness.
 
-A run succeeds only when required deterministic and hidden checks pass. Similarity to the historical human patch is diagnostic, not the correctness criterion.
-
-Primary aggregate metric:
+Primary metric:
 
 ```text
 total inference + compute cost
@@ -202,15 +266,16 @@ total inference + compute cost
 independently verified correct tasks
 ```
 
-Secondary metrics cover latency, minimality, escalation, regressions, and human intervention.
+Also measure decomposition size/depth, per-sub-task success, retrieval quality, unnecessary edits, repairs, latency, escalation, regressions, and human intervention.
 
-## 14. Immediate implementation choices
+## 16. Immediate implementation choices
 
-- Python 3.11+ orchestration.
+- Python 3.11+ with uv and `pyproject.toml`.
 - Standard library first; pytest for tests.
+- sequential dependency-aware execution first.
 - ripgrep for textual retrieval.
 - unified diffs for mutation.
-- subprocess execution only through configured verifier commands.
-- model backend behind a protocol.
+- allowlisted verifier subprocesses.
+- provider-independent model protocol.
 - no vector DB until retrieval baselines justify it.
 - no multi-agent framework; specialization is explicit operations/prompts.
