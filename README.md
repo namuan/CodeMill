@@ -13,8 +13,10 @@ CodeMill explores how small coding models (initially around 9B parameters) can p
 - **Tests are immutable during implementation.** The implementation model fixes production code; it does not weaken or rewrite the test to obtain GREEN.
 - **Minimal implementation.** Add only the production behavior required to make the new test pass. No speculative abstractions, unrelated refactors, or extra behavior.
 - **GREEN is not enough.** Run regression checks and review the diff for unnecessary implementation after the focused test passes.
-- **Small tasks, strong context.** Retrieve only code needed for the current sub-task.
-- **Tools over guessing.** Search, inspect, patch, test, and compile through explicit tools.
+- **Small tasks, progressive context.** Build separate discovery, test, and implementation context packs; retrieve only evidence needed for the current TDD stage.
+- **Structure before text.** Use ast-grep for code-aware structural discovery and ripgrep only for non-code/textual evidence or fallback.
+- **RED drives retrieval.** Test failures, stack frames, file/line locations, and diagnostics become high-priority evidence for implementation context.
+- **Tools over guessing.** Search, inspect, patch, test, and compile through explicit harness-controlled tools.
 - **Verify composition.** After all sub-tasks pass, verify the complete repository against the original task.
 - **Bounded autonomy.** Limit repairs and escalate ambiguous/high-risk work.
 
@@ -90,7 +92,7 @@ See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
 CodeMill uses **uv** for Python and dependency management, with `pyproject.toml` as the project configuration.
 
-Requires Python 3.11+, uv, and a locally running llama.cpp `llama-server`. CodeMill initially assumes the server is already running at `http://127.0.0.1:9090`; model loading and model paths are owned by llama-server, not CodeMill.
+Requires Python 3.11+, uv, ast-grep, ripgrep, and a locally running llama.cpp `llama-server`. CodeMill initially assumes the server is already running at `http://127.0.0.1:9090`; model loading and model paths are owned by llama-server, not CodeMill.
 
 ```bash
 uv sync
