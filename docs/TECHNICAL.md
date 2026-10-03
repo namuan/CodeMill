@@ -43,7 +43,37 @@ Original Task
  VERIFIED / ESCALATED / FAILED
 ```
 
-## 2. Why decomposition is first-class
+## 2. v0 product contract
+
+v0 is an end-to-end working prototype, not only an in-memory orchestration library. A user supplies a repository and task; CodeMill calls a real model through a running llama.cpp `llama-server`, drives the task through the harness-controlled workflow, and writes a reviewable result bundle. A run ends as VERIFIED, ESCALATED, or FAILED. It must not report VERIFIED unless the evidence required by the workflow is present.
+
+### 2.1 Invocation and repository policy
+
+The initial user interface may be a CLI. It accepts a repository path, task objective, optional acceptance criteria, and constraints. It records the starting revision and working-tree status before mutation. v0 must either safely preserve pre-existing user changes in an isolated worktree or refuse to mutate a dirty repository with a clear diagnostic; it must never silently overwrite or discard them. The chosen policy is part of the interface and is recorded in run metadata.
+
+A run uses a unique run directory for its artifacts. The output location is reported to the user and must not be inside a protected source/test path by accident. Failure to initialize the workspace, reach the model, parse a response, apply a valid patch, or run required verification yields FAILED or ESCALATED with diagnostics, not a successful result.
+
+### 2.2 Required result bundle
+
+Every run, including failed and escalated runs, writes as much of the following bundle as is available:
+
+```text
+run.json                 task, repository revision/status, configuration, final status
+plan.json                normalized task, sub-tasks, dependencies, validation outcome
+trace.jsonl              ordered model/tool/state/verification events
+final.diff               resulting repository diff, if any
+changed-files.json       changed paths and change-budget results
+verification.json        command, purpose, exit status, diagnostics, timestamps
+result.md                concise human-readable summary and escalation details
+```
+
+The exact serialization may evolve, but the information must be captured. Artifacts distinguish model claims from harness-observed facts. Record prompts or packed contexts only as needed for reproducibility and security; never persist secrets or assume conversation transcripts are authoritative. Preserve diagnostic output subject to size limits and secret redaction.
+
+A VERIFIED run requires evidence of valid RED for each newly implemented slice, test protection through implementation/repair, focused GREEN, required regression verification, accepted scope/minimality review, and final verification against the original task. If a task is already satisfied, CodeMill may report VERIFIED only when existing repository evidence demonstrates all acceptance criteria and final verification passes; it must not fabricate a failing test or unnecessary implementation. Ambiguous already-satisfied cases escalate.
+
+The end-to-end v0 acceptance test runs a bounded task against a fixture repository using a real llama.cpp endpoint, then checks the final repository state and bundle. Deterministic fake-model tests cover state-machine and failure cases. Real-server integration can be opt-in in CI, but it must be run before declaring the v0 prototype usable.
+
+## 3. Why decomposition is first-class
 
 A small model should not carry the full cognitive burden of a large software task through every generation turn. DECOMPOSE converts the original request into bounded units with explicit success conditions.
 
@@ -68,7 +98,7 @@ Horizontal decomposition is an anti-pattern when the pieces are not independentl
 
 The decomposition test is: **Can this slice be made smaller while every resulting piece still has an independently observable verification condition?** If yes, split it. If no, it is a candidate minimal vertical slice.
 
-## 3. Core contracts
+## 4. Core contracts
 
 `Task` contains the original objective, acceptance criteria, and constraints.
 
@@ -97,7 +127,7 @@ review(subtask, diff, verification) -> review
 
 The harness owns sequencing. In particular, it never requests IMPLEMENT before it has accepted a failing test and demonstrated RED.
 
-## 4. Decomposition protocol
+## 5. Decomposition protocol
 
 DECOMPOSE receives the original task, acceptance criteria, constraints, and a lightweight repository summary. It should not receive the entire repository.
 
@@ -166,7 +196,7 @@ ST-001 Expose the new field through the API
 
 Additional observable behavior becomes another vertical slice.
 
-## 5. Scheduling and repository state
+## 6. Scheduling and repository state
 
 Execute only a sub-task whose dependencies are VERIFIED. Initially use deterministic sequential topological execution.
 
@@ -174,7 +204,7 @@ Each verified sub-task changes the workspace seen by later sub-tasks. This is in
 
 Parallel execution may be explored later only for independent sub-tasks with isolated workspaces and an explicit merge/reverification strategy.
 
-## 6. Progressive context construction
+## 7. Progressive context construction
 
 CodeMill does not build one generic context pack for a sub-task. Context is **stage-specific and progressively refined by deterministic evidence**.
 
@@ -363,7 +393,7 @@ GATHER -> RANK -> PACK -> MODEL -> VERIFY -> COMPACT
    +------ current repo + run state ------+
 ```
 
-## 7. Retrieval tools and workspace
+## 8. Retrieval tools and workspace
 
 CodeMill uses **ast-grep as the primary retrieval engine for source code**. ast-grep provides syntax/AST-aware structural matching and structured result ranges suitable for deterministic context construction. It is used for retrieval only; its rewrite functionality is not part of CodeMill's mutation path.
 
@@ -403,9 +433,9 @@ check_allowed_paths(diff)
 check_change_budget(diff)
 ```
 
-Pin the input commit and use a disposable worktree/container. Normalize paths relative to repository root; reject symlink escape and traversal. All subprocesses are allowlisted and parameterized by the harness.
+Pin the input commit and use a disposable worktree/container for mutations and verification. Record initial Git status and preserve user changes; v0 may refuse dirty worktrees rather than implement safe isolation, but must not silently mutate or discard pre-existing changes. Normalize paths relative to repository root; reject symlink escape and traversal. All subprocesses are allowlisted, parameterized by the harness, bounded by time/output limits, and run with a filtered environment. Repository content and model output are untrusted data, never harness instructions.
 
-## 8. Patch policy and budgets
+## 9. Patch policy and budgets
 
 Enforce budgets both per sub-task and cumulatively:
 
@@ -421,7 +451,7 @@ Enforce budgets both per sub-task and cumulatively:
 
 Hard violations reject or escalate. Initially disallow binary changes and sensitive metadata/secrets edits. Optionally require edits to intersect the sub-task's planned scope.
 
-## 9. Harness-enforced TDD
+## 10. Harness-enforced TDD
 
 TDD is a control-flow invariant, not an instruction the model may choose to follow.
 
@@ -479,7 +509,7 @@ Compare the production diff against the slice and accepted test. Reject or repai
 
 Minimality is semantic, not simply lowest line count: the implementation should be the smallest maintainable change consistent with repository conventions and the requested behavior.
 
-## 10. Verification at two levels
+## 11. Verification at two levels
 
 ### Sub-task verification
 
@@ -495,19 +525,19 @@ After all sub-tasks verify, evaluate the combined repository against the **origi
 
 Final failure must not be silently attributed to the last sub-task. The trace should preserve evidence needed for future diagnosis/replanning.
 
-## 11. Repair
+## 12. Repair
 
 REPAIR operates within one sub-task. Supply original task context, current sub-task, current diff, failing stage, normalized diagnostics, relevant local source, verified prerequisite changes, and remaining budget.
 
 It is not a fresh solve. Require the smallest correction. Default target is at most three repair turns; detect identical failures and patch oscillation.
 
-## 12. Review
+## 13. Review
 
 REVIEW is distinct from deterministic verification. It checks scope and intent: unnecessary changes, violation of the sub-task plan, accidental API expansion, suspicious deletion, or behavior not covered by verification.
 
 Reviewer output should be structured and advisory/policy-driven, not a replacement for tests or compilers.
 
-## 13. State and failure semantics
+## 14. State and failure semantics
 
 Outer states:
 
@@ -526,17 +556,17 @@ PENDING -> LOCATE -> GATHER -> WRITE_TEST -> CONFIRM_RED
 
 IMPLEMENT is unreachable until valid RED has been recorded. REPAIR cannot mutate the protected test.
 
-Terminal alternatives include EXHAUSTED, ESCALATED, and FAILED.
+Run terminal statuses are VERIFIED, ESCALATED, and FAILED. Repair-budget exhaustion, verifier failure, and operational errors are FAILED outcomes with structured reason codes; use ESCALATED when human input or unsupported capability is required. Sub-task outcomes remain non-terminal workflow results and must not be confused with the run status.
 
 Every transition emits a structured event keyed by run ID and sub-task ID.
 
-## 14. Security
+## 15. Security
 
-Treat LLM output and repository content as untrusted: no raw model shell; allowlisted subprocess commands; time/memory limits; network off by default; filtered environment; no secrets in model context; disposable workspace; validated mutations.
+Treat LLM output and repository content as untrusted: no raw model shell; allowlisted subprocess commands; time/memory/output limits; outbound network off by default except the configured local llama-server endpoint; filtered environment; no secrets in model context; disposable workspace; validated mutations.
 
 Repository content may contain prompt injection. Retrieved text is evidence, not harness instruction.
 
-## 15. Inference backend
+## 16. Inference backend
 
 The first CodeMill backend is a locally running llama.cpp `llama-server`.
 
@@ -566,7 +596,7 @@ locally loaded model
 
 The same local model initially performs DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, and REVIEW with operation-specific prompts/context. Later evaluation may justify different model/configuration choices per operation.
 
-## 16. Observability and evaluation
+## 17. Observability and evaluation
 
 Persist original task/repository SHA, decomposition graph, sub-task transitions, context fragment IDs, packed-context manifests, verified-slice records, scoped learning IDs/provenance/supersession, tool calls/durations, patch hashes, verifier results, tokens, repair counts, and final diff/status.
 
@@ -584,7 +614,7 @@ independently verified correct tasks
 
 Also measure decomposition size/depth, per-sub-task success, retrieval quality, unnecessary edits, repairs, latency, escalation, regressions, and human intervention.
 
-## 17. Immediate implementation choices
+## 18. Immediate implementation choices
 
 - Python 3.11+ with uv and `pyproject.toml`.
 - Standard library first; pytest for tests.

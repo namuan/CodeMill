@@ -21,11 +21,33 @@ If GREEN is not reached, bounded REPAIR attempts modify implementation code only
 
 The primary success metric is **cost per independently verified correct task**.
 
+## v0 target: end-to-end working prototype
+
+v0 accepts a task for a local repository, connects to a running llama.cpp `llama-server`, and attempts the task through the decomposition and harness-enforced TDD workflow. It must either produce a verified repository state (with a change when needed) or stop with an explicit, evidence-backed escalation/failure result. Fake-model tests are useful for development but do not satisfy this target.
+
+The v0 user-facing entry point must accept a repository location, task objective, optional acceptance criteria, and constraints. It must make the working-tree policy explicit, record the starting revision/status, and avoid silently discarding pre-existing user changes. It must support a dirty repository safely or refuse to run with a clear explanation.
+
+A completed run produces a reviewable artifact bundle containing:
+
+- final status: verified, escalated, or failed;
+- normalized task and validated sub-task/dependency plan;
+- structured event trace of model operations, tool actions, state transitions, and verification outcomes;
+- final diff and changed-file list;
+- verification commands, purposes, exit statuses, and relevant diagnostics;
+- repair attempts and unresolved issues, including escalation reasons;
+- repository revision and run metadata sufficient to identify the state that was verified.
+
+The v0 verified outcome requires demonstrated valid RED before implementation, protected accepted tests, focused GREEN, required regression checks, final verification against the original task, and a reviewable result (including a no-change result when the task is already satisfied). The prototype must fail closed or escalate when it cannot establish these conditions. Model review is advisory and cannot override deterministic verification.
+
+The v0 implementation covers the usable core of Phases 1–4, 6–7, plus minimum per-stage context construction from Phase 5. Full context ranking/provenance, persistent scoped learning, resumable runs, and evaluation infrastructure are not prerequisites unless needed to preserve safety or correctness.
+
+The first end-to-end acceptance test uses a fixture repository and a real llama.cpp server/model: submit a bounded task, run the complete workflow, and inspect the artifacts and resulting repository state. Fake adapters remain the default for deterministic unit tests; the real integration test may be opt-in when a local server/model is unavailable in CI.
+
 ## Phase 0 — Decomposition-aware bootstrap
 
-Define task, sub-task, dependency, result, model, tool, and verifier contracts. Implement decomposition, dependency-ordered execution, bounded repair, and final whole-task verification.
+Define task, sub-task, dependency, result, model, tool, and verifier contracts. Implement decomposition, dependency validation and deterministic scheduling, bounded repair, structured run events, and final whole-task verification.
 
-**Exit:** fake-model tests demonstrate decomposition, dependency ordering, repair, and final verification.
+**Exit:** fake-model tests demonstrate decomposition, graph validation/scheduling, repair, failure handling, and final verification. This is an internal foundation, not completion of v0.
 
 ## Phase 1 — Structured vertical-slice decomposition
 
@@ -117,11 +139,11 @@ Learnings are retrieved on demand rather than injected globally. Each learning c
 
 ## Phase 6 — llama.cpp model adapter
 
-Use a locally managed llama.cpp `llama-server` as the first inference backend. For the initial implementation, CodeMill hard-codes the server base URL to `http://127.0.0.1:9090`. The user starts and owns the llama-server process, including model selection/loading; CodeMill does not require or manage a model filesystem path.
+This phase is required for v0, not a post-v0 enhancement. Use a locally managed llama.cpp `llama-server` as the first inference backend. The initial endpoint is hard-coded to `http://127.0.0.1:9090`; the user starts and owns the server and model selection/loading.
 
-Use llama-server's OpenAI-compatible HTTP API for inference.
+Use llama-server's OpenAI-compatible HTTP API. Define and test request/response parsing, operation-specific prompts, structured-output validation, timeouts, bounded retries, and clear handling for unavailable servers, malformed output, and model refusal/failure. Never treat malformed model output as authorization to skip a harness invariant.
 
-Keep operations specialised: **DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, REVIEW**. Prefer schema-constrained output and evaluate each operation independently.
+Keep operations specialised: **DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, REVIEW**. Prefer schema-constrained output and evaluate each operation independently. Every call receives the current task/sub-task, relevant repository evidence, constraints, and explicit run state it needs; correctness must not depend on retained conversation history.
 
 The implementation instruction is intentionally narrow: make the accepted failing test pass with the smallest production-code change; do not modify the test; do not implement behavior not required by the slice.
 
@@ -147,14 +169,15 @@ Fine-tuning is an optimization step, not the starting architecture.
 
 ## Near-term backlog
 
-1. Formal SubTask/decomposition JSON schema and graph validator.
-2. Vertical-slice quality validator/rules.
-3. TDD state model: WRITE_TEST, RED, IMPLEMENT, GREEN, REGRESSION, MINIMALITY_REVIEW.
-4. Protected-test patch policy.
-5. Persistent run-state + COMPACT lifecycle + scoped learning store.
-6. Structured event/trace format keyed by task and sub-task.
-7. Filesystem sandbox + ast-grep structural retrieval adapter + rg textual fallback.
-8. Unified-diff parser + per-slice/whole-task change budgets.
-9. Allowlisted targeted/regression verifier.
-10. llama.cpp adapter hard-coded to `http://127.0.0.1:9090`.
-11. Fixture repository + first decomposition-to-TDD benchmark.
+1. Define the user invocation, repository cleanliness/worktree policy, result statuses, and artifact bundle.
+2. Formal SubTask/decomposition schema, graph validator, deterministic scheduler, and invalid-plan escalation.
+3. TDD state model and verifier contracts for expected RED, focused GREEN, regression, and final verification.
+4. Protected-test patch policy, validated diff application, allowed-path and change-budget enforcement.
+5. Harness-controlled repository tools and an explicit v0 sandbox/subprocess security boundary.
+6. Structured event trace and artifact writer keyed by task and sub-task; minimum context construction for each model operation.
+7. llama.cpp adapter at `http://127.0.0.1:9090`, including real request/response handling and failure behavior.
+8. Minimal progressive retrieval (ast-grep for source structure, rg textual fallback); advanced provenance ranking and scoped learning may follow.
+9. Fixture-repository end-to-end test with a real llama.cpp server/model, plus deterministic fake-model unit tests.
+10. Run the complete task workflow and inspect the resulting bundle, diff, and verification evidence.
+
+Persistent resume, a durable scoped learning store, sophisticated semantic decomposition scoring, and benchmark/evaluation infrastructure are valuable follow-ups, but should not block the first v0 unless needed for safe, reproducible runs.
