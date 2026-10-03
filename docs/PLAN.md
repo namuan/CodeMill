@@ -63,9 +63,26 @@ A sub-task becomes VERIFIED only after RED was demonstrated, GREEN was reached, 
 
 ## Phase 3 — Local repository tools
 
-Implement safe deterministic tools: ripgrep search, ranged reads, tree/symbol discovery, references/tests, validated unified-diff application, Git diff/status inspection, and targeted test execution.
+Use **ast-grep as the primary code retrieval engine**. Its structural/AST-aware queries and machine-readable output provide deterministic evidence about code definitions, declarations, calls, imports, tests, and nearby syntax without exposing a shell to the model.
 
-Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, no arbitrary shell, and protection preventing implementation turns from modifying the accepted test.
+Use **ripgrep only for non-code/textual evidence and fallback**, including Markdown/docs, configuration and data files that ast-grep does not structurally understand, literal error messages, generated text, and cases where a structural query is unavailable.
+
+Expose semantic read operations to the context engine/model rather than raw CLI access:
+
+```text
+list_tree(path, depth)
+find_definitions(name)
+find_structural(pattern)
+find_calls(name)
+find_imports(name)
+find_tests_for(symbol_or_path)
+read_range(path, start, end)
+search_text(query, paths?)       # rg fallback/non-code
+```
+
+Mutation and execution remain harness-only capabilities: validated patch application, Git diff/status, targeted tests, regression checks, formatting/lint/type/build checks, protected-test enforcement, allowed-path checks, and change-budget checks.
+
+Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, no arbitrary shell, and protection preventing implementation turns from modifying the accepted test. ast-grep is retrieval-only initially; CodeMill does not use its rewrite capability.
 
 ## Phase 4 — Verification pipeline
 
@@ -78,11 +95,19 @@ Separate verification purposes:
 
 Normalize failures before returning them to REPAIR.
 
-## Phase 5 — Context engine
+## Phase 5 — Progressive context engine
 
-Build context **per vertical slice**. Context may cross layers when required by the behavior. Rank acceptance criteria, target behavior, existing related tests, interfaces, direct dependencies, and verified prerequisite changes.
+Build context **per vertical slice and per TDD stage** rather than constructing one large context pack up front.
 
-Test generation and implementation generation should receive different context packs. Implementation receives the accepted failing test as an immutable specification.
+Start from a cheap repository map: source/test layout, language/framework clues, package/module boundaries, build/test configuration, and verified prerequisite slices. Derive structural search candidates from the slice objective and acceptance criteria.
+
+Use ast-grep to discover code structure and expand evidence incrementally: candidate definitions/declarations, imports, calls/usages that can be expressed structurally, nearby tests, interfaces/types, and analogous local patterns. Use rg for non-code/textual material and literal fallback searches.
+
+Build a small **test context** containing the slice, acceptance criteria, constraints, closest test conventions/fixtures, public behavioral surface, required input/output types, and relevant verified prerequisites. Avoid exposing unnecessary production internals that could cause the generated test to encode an implementation rather than behavior.
+
+After CONFIRM_RED, treat failure evidence as a new retrieval signal. Stack frames, file/line locations, exceptions, compiler/type diagnostics, and assertion output should receive the highest retrieval priority. Use them to construct a separate **implementation context** containing the accepted immutable failing test, RED diagnostics, implicated production symbols/ranges, required interfaces/types, nearby error-handling or implementation conventions, constraints, and change budget.
+
+Every context fragment records path/range, symbols when applicable, kind, why it was selected, retrieval source, and score. Deduplicate overlapping ranges and enforce a strict token budget. The objective is **minimum sufficient evidence**, not filling the model's available context window.
 
 ## Phase 6 — llama.cpp model adapter
 
@@ -121,7 +146,7 @@ Fine-tuning is an optimization step, not the starting architecture.
 3. TDD state model: WRITE_TEST, RED, IMPLEMENT, GREEN, REGRESSION, MINIMALITY_REVIEW.
 4. Protected-test patch policy.
 5. Structured event/trace format keyed by task and sub-task.
-6. Filesystem sandbox + ripgrep adapter.
+6. Filesystem sandbox + ast-grep structural retrieval adapter + rg textual fallback.
 7. Unified-diff parser + per-slice/whole-task change budgets.
 8. Allowlisted targeted/regression verifier.
 9. llama.cpp adapter hard-coded to `http://127.0.0.1:9090`.
