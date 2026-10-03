@@ -16,6 +16,8 @@ CodeMill explores how small coding models (initially around 9B parameters) can p
 - **Small tasks, progressive context.** Build separate discovery, test, and implementation context packs; retrieve only evidence needed for the current TDD stage.
 - **Structure before text.** Use ast-grep for code-aware structural discovery and ripgrep only for non-code/textual evidence or fallback.
 - **RED drives retrieval.** Test failures, stack frames, file/line locations, and diagnostics become high-priority evidence for implementation context.
+- **Reconstruct, don't accumulate.** Every model call gets a fresh bounded context assembled from the current repository and explicit run state; correctness never depends on LLM conversation history.
+- **Compact verified work.** After each slice, retain structured verified behaviors, decisions, constraints, and scoped learnings—not old prompts, whole contexts, or failed patch bodies.
 - **Tools over guessing.** Search, inspect, patch, test, and compile through explicit harness-controlled tools.
 - **Verify composition.** After all sub-tasks pass, verify the complete repository against the original task.
 - **Bounded autonomy.** Limit repairs and escalate ambiguous/high-risk work.
@@ -65,6 +67,8 @@ A sub-task is the **smallest vertical slice of behavior that can be meaningfully
 For every slice, CodeMill owns the TDD sequence. It creates the smallest test that expresses the slice's acceptance criterion, confirms the test fails for the expected reason, and only then asks the coding model for the smallest production change that makes it pass. The test is protected during implementation.
 
 Sub-tasks declare dependencies, and CodeMill only executes a sub-task after its dependencies have verified.
+
+After a slice verifies, CodeMill compacts it into structured run state. The current repository remains authoritative; later slices retrieve only relevant verified facts and evidence-backed learnings. Learnings are scoped to files/symbols/concepts and may be superseded by newer repository evidence, preventing context from growing monotonically across a long task.
 
 ## Repository layout
 
