@@ -53,12 +53,28 @@ See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
 ## Development
 
-Requires Python 3.11+.
+CodeMill uses **uv** for Python and dependency management, with `pyproject.toml` as the project configuration.
+
+Requires Python 3.11+ and uv.
 
 ```bash
-python -m pip install -e ".[dev]"
-pytest
+uv sync
+uv run pytest
 ```
+
+Add runtime dependencies with:
+
+```bash
+uv add <package>
+```
+
+Add development dependencies with:
+
+```bash
+uv add --dev <package>
+```
+
+Commit `uv.lock` once generated so development and CI resolve the same dependency set.
 
 ## License
 
