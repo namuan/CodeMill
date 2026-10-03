@@ -2,11 +2,11 @@
 
 **A verification-first coding harness for small language models.**
 
-CodeMill explores how small coding models (initially around 9B parameters) can perform useful repository-level software engineering by first decomposing a developer task into the smallest independently verifiable changes, then executing each change with strong context selection, constrained actions, deterministic verification, and bounded repair.
+CodeMill explores how small coding models (initially around 9B parameters) can perform useful repository-level software engineering by first decomposing a developer task into the **smallest independently verifiable vertical slices**, then executing each change with strong context selection, constrained actions, deterministic verification, and bounded repair.
 
 ## Design principles
 
-- **Decompose before coding.** Turn the original task into minimal, dependency-aware, independently verifiable sub-tasks.
+- **Decompose into vertical slices.** Each sub-task delivers one observable behavior through whatever layers are required to verify it.\n- **Smallest independently verifiable unit.** Split further only when every resulting slice still has a meaningful observable verification condition.\n- **Avoid horizontal decomposition.** Database, service, API, UI, or tests are not separate sub-tasks merely because they are separate technical layers.\n- **Verification belongs to the slice.** Production changes and the focused tests proving them normally live in the same sub-task.
 - **One bounded cycle per sub-task.** Each sub-task gets its own locate, plan, patch, verify, repair, and review cycle.
 - **Small tasks, strong context.** Retrieve only code needed for the current sub-task.
 - **Tools over guessing.** Search, inspect, patch, test, and compile through explicit tools.
@@ -25,7 +25,7 @@ Developer Task
  DECOMPOSE
      |
      v
-Minimal dependency-aware sub-tasks
+Minimal independently verifiable vertical slices
      |
      +--> ST-001: LOCATE -> PLAN -> PATCH -> VERIFY
      |                                  ^       |
@@ -44,7 +44,7 @@ FINAL VERIFY
 Result / Escalation
 ```
 
-A sub-task should be the smallest repository change that can be meaningfully verified on its own. Sub-tasks declare dependencies, and CodeMill only executes a sub-task after its dependencies have verified.
+A sub-task is the **smallest vertical slice of behavior that can be meaningfully verified on its own**. It may cross storage, domain, API, UI, and test layers when those changes are jointly required to expose one observable behavior. Sub-tasks declare dependencies, and CodeMill only executes a sub-task after its dependencies have verified.
 
 ## Repository layout
 
@@ -64,7 +64,7 @@ tests/
 
 ## Status
 
-CodeMill is at **v0 / bootstrap**. The current core models task decomposition, dependency-ordered sub-task execution, bounded repair loops, and final verification. The next milestone is replacing fake capabilities with safe repository tools and structured model protocols.
+CodeMill is at **v0 / bootstrap**. The current core models task decomposition, dependency-ordered sub-task execution, bounded repair loops, and final verification. The next milestone is a structured decomposition protocol that enforces the vertical-slice invariant.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
