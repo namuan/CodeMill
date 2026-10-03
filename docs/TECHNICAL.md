@@ -19,15 +19,17 @@ Original Task
 +---------------------------------------+
 | Next ready SubTask                    |
 |                                       |
-| LOCATE -> PLAN -> GATHER -> PATCH     |
-|                           |           |
-|                     POLICY_CHECK      |
-|                           |           |
-|                        VERIFY         |
-|                      /        \       |
-|                   pass        fail    |
-|                    |            |     |
-|                  REVIEW       REPAIR -+
+| LOCATE -> GATHER                      |
+|      |                                |
+| WRITE_TEST -> CONFIRM_RED             |
+|      |                                |
+| IMPLEMENT_MINIMUM -> CONFIRM_GREEN    |
+|                         | fail        |
+|                       REPAIR ---------+
+|                         |
+|                  REGRESSION_VERIFY
+|                         |
+|                  MINIMALITY_REVIEW
 +---------------------------------------+
      |
      | verified; unlock dependents
@@ -82,18 +84,18 @@ depends_on
 
 Planned additions include expected files/symbols, risk class, and change budget.
 
-The model adapter exposes semantic operations:
+The model adapter exposes specialised semantic operations:
 
 ```text
 decompose(task, tools) -> SubTask[]
 locate(subtask, tools) -> evidence requests
-plan(subtask, context) -> bounded plan
-create_patch(subtask, plan, tools) -> patch
-repair_patch(subtask, diagnostics, tools) -> patch
+write_test(subtask, context) -> test patch
+implement(subtask, failing_test, context) -> production patch
+repair(subtask, failing_test, diagnostics, context) -> production patch
 review(subtask, diff, verification) -> review
 ```
 
-The bootstrap currently combines LOCATE and PLAN; they will split when retrieval is implemented.
+The harness owns sequencing. In particular, it never requests IMPLEMENT before it has accepted a failing test and demonstrated RED.
 
 ## 4. Decomposition protocol
 
@@ -218,7 +220,65 @@ Enforce budgets both per sub-task and cumulatively:
 
 Hard violations reject or escalate. Initially disallow binary changes and sensitive metadata/secrets edits. Optionally require edits to intersect the sub-task's planned scope.
 
-## 9. Verification at two levels
+## 9. Harness-enforced TDD
+
+TDD is a control-flow invariant, not an instruction the model may choose to follow.
+
+For each vertical slice:
+
+```text
+LOCATE / GATHER
+      |
+WRITE_MINIMAL_TEST
+      |
+CONFIRM_RED
+   |       \
+   |        +-- test already passes / wrong failure -> REVISE_TEST or ESCALATE
+   v
+FREEZE_TEST
+      |
+IMPLEMENT_MINIMUM
+      |
+CONFIRM_GREEN
+   |       \
+   |        +-- fail -> REPAIR -> CONFIRM_GREEN
+   v
+REGRESSION_VERIFY
+      |
+MINIMALITY_REVIEW
+      |
+VERIFIED
+```
+
+### Test generation
+
+The harness requests the smallest focused test that demonstrates the slice's observable acceptance criterion. The test should avoid asserting incidental implementation details unless those details are part of the requested contract.
+
+### RED is mandatory
+
+The harness executes the new test before any production implementation patch is accepted. RED must fail for the expected missing behavior. Syntax errors, broken fixtures, unrelated failures, or an already-passing test do not qualify.
+
+If the test already passes, the harness must revise the test when the acceptance criterion is not actually covered, mark the slice already satisfied when evidence supports that conclusion, or escalate ambiguity. It must not manufacture production changes merely to create work.
+
+### Test immutability
+
+Once a test has demonstrated valid RED, record its patch/hash as the accepted specification for the slice. IMPLEMENT and REPAIR may modify production code only. Any attempt to modify, delete, skip, weaken, or bypass the protected test is rejected before application.
+
+### Minimal implementation
+
+The implementation model receives the slice, accepted failing test, relevant source context, constraints, and change budget. Its contract is:
+
+> Make the accepted failing test pass with the smallest production-code change. Do not modify the test. Do not add behavior, abstractions, APIs, dependencies, or refactors not required by the slice.
+
+GREEN is necessary but not sufficient. Passing the focused test is followed by regression verification and minimality review.
+
+### Minimality review
+
+Compare the production diff against the slice and accepted test. Reject or repair speculative abstractions, unrelated refactors, extra public surface, unnecessary files/LOC, dead code, or behavior unsupported by the acceptance criterion.
+
+Minimality is semantic, not simply lowest line count: the implementation should be the smallest maintainable change consistent with repository conventions and the requested behavior.
+
+## 10. Verification at two levels
 
 ### Sub-task verification
 
@@ -234,19 +294,19 @@ After all sub-tasks verify, evaluate the combined repository against the **origi
 
 Final failure must not be silently attributed to the last sub-task. The trace should preserve evidence needed for future diagnosis/replanning.
 
-## 10. Repair
+## 11. Repair
 
 REPAIR operates within one sub-task. Supply original task context, current sub-task, current diff, failing stage, normalized diagnostics, relevant local source, verified prerequisite changes, and remaining budget.
 
 It is not a fresh solve. Require the smallest correction. Default target is at most three repair turns; detect identical failures and patch oscillation.
 
-## 11. Review
+## 12. Review
 
 REVIEW is distinct from deterministic verification. It checks scope and intent: unnecessary changes, violation of the sub-task plan, accidental API expansion, suspicious deletion, or behavior not covered by verification.
 
 Reviewer output should be structured and advisory/policy-driven, not a replacement for tests or compilers.
 
-## 12. State and failure semantics
+## 13. State and failure semantics
 
 Outer states:
 
@@ -258,21 +318,24 @@ NORMALIZE -> DECOMPOSE -> VALIDATE_GRAPH -> EXECUTE_SUBTASKS
 Sub-task states:
 
 ```text
-PENDING -> LOCATE -> PLAN -> GATHER -> PATCH -> POLICY_CHECK
- -> VERIFY -> REPAIR* -> REVIEW -> VERIFIED
+PENDING -> LOCATE -> GATHER -> WRITE_TEST -> CONFIRM_RED
+ -> FREEZE_TEST -> IMPLEMENT -> CONFIRM_GREEN
+ -> REPAIR* -> REGRESSION_VERIFY -> MINIMALITY_REVIEW -> VERIFIED
 ```
+
+IMPLEMENT is unreachable until valid RED has been recorded. REPAIR cannot mutate the protected test.
 
 Terminal alternatives include EXHAUSTED, ESCALATED, and FAILED.
 
 Every transition emits a structured event keyed by run ID and sub-task ID.
 
-## 13. Security
+## 14. Security
 
 Treat LLM output and repository content as untrusted: no raw model shell; allowlisted subprocess commands; time/memory limits; network off by default; filtered environment; no secrets in model context; disposable workspace; validated mutations.
 
 Repository content may contain prompt injection. Retrieved text is evidence, not harness instruction.
 
-## 14. Inference abstraction
+## 15. Inference abstraction
 
 Core CodeMill stays provider-independent. First adapter target is an OpenAI-compatible local endpoint.
 
@@ -290,7 +353,7 @@ context_tokens = 16000
 
 DECOMPOSE may eventually use a different model/configuration from PATCH/REPAIR, but the initial design should prove whether one 9B model can perform all specialised operations.
 
-## 15. Observability and evaluation
+## 16. Observability and evaluation
 
 Persist original task/repository SHA, decomposition graph, sub-task transitions, context fragment IDs, tool calls/durations, patch hashes, verifier results, tokens, repair counts, and final diff/status.
 
@@ -308,13 +371,15 @@ independently verified correct tasks
 
 Also measure decomposition size/depth, per-sub-task success, retrieval quality, unnecessary edits, repairs, latency, escalation, regressions, and human intervention.
 
-## 16. Immediate implementation choices
+## 17. Immediate implementation choices
 
 - Python 3.11+ with uv and `pyproject.toml`.
 - Standard library first; pytest for tests.
 - sequential dependency-aware execution first.
 - ripgrep for textual retrieval.
 - unified diffs for mutation.
+- protected test patches/hashes after valid RED.
+- separate test and production patch policies.
 - allowlisted verifier subprocesses.
 - provider-independent model protocol.
 - no vector DB until retrieval baselines justify it.
