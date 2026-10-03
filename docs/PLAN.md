@@ -4,7 +4,7 @@
 
 Build a specialised coding harness that makes small language models useful for real repository-level software development.
 
-CodeMill begins every developer task by decomposing it into **minimal, dependency-aware, independently verifiable sub-tasks**. Each sub-task then runs through the same bounded coding cycle:
+CodeMill begins every developer task by decomposing it into **minimal, dependency-aware, independently verifiable vertical slices**. Each sub-task then runs through the same bounded coding cycle:
 
 ```text
 LOCATE -> PLAN -> PATCH -> VERIFY -> REVIEW
@@ -44,7 +44,7 @@ Replace free-form decomposition with schema-constrained output. A sub-task must 
 
 Validate the graph before execution: unique IDs, existing dependencies, no cycles, and deterministic topological order.
 
-Add decomposition quality rules: each sub-task should represent one coherent repository change and be independently verifiable. Reject plans that merely restate the original task, create unnecessarily broad sub-tasks, or split work so finely that verification has no meaningful signal.
+Add decomposition quality rules built around the **vertical-slice invariant**: each sub-task delivers one observable behavior through all technical layers needed to verify it. Tests belong to the slice rather than becoming a separate horizontal task. Split a slice further only when every resulting slice remains independently and meaningfully verifiable. Reject layer-oriented plans such as “add database field”, “add service”, “add endpoint”, and “add tests” when those pieces only become meaningful together.\n\nThe decomposition test is: **Can this slice be made smaller while every resulting piece still has its own observable verification condition?** If yes, split it. If no, keep it as the minimal vertical slice.
 
 ## Phase 2 — Local repository tools
 
@@ -54,7 +54,7 @@ Guardrails include repository-root sandboxing, path traversal prevention, patch 
 
 ## Phase 3 — Verification pipeline
 
-For every sub-task run cheapest checks first: patch validity, formatter, linter/static checks, compiler/type checker, targeted tests, affected tests, and diff policy review.
+For every sub-task run cheapest checks first: patch validity, formatter, linter/static checks, compiler/type checker, targeted behavioral tests, affected tests, and diff policy review. Verification must prove the slice's observable behavior, not merely that its implementation layers compile.
 
 Final task verification then runs the checks needed to prove the combined changes satisfy the original acceptance criteria.
 
@@ -74,7 +74,7 @@ Keep model operations specialised: **DECOMPOSE, LOCATE, PLAN, PATCH, REPAIR, REV
 
 ## Phase 6 — Change budgets and escalation
 
-Apply budgets per sub-task and across the whole task: files/LOC, dependencies, public APIs, schemas, generated files, and sensitive paths.
+Apply budgets per sub-task and across the whole task: files/LOC, dependencies, public APIs, schemas, generated files, and sensitive paths. A vertical slice may legitimately touch multiple layers/files; budgets must not force horizontal decomposition.
 
 Escalate when decomposition is invalid, policy is exceeded, context remains ambiguous, repairs oscillate, verification is unavailable, or the task requires unsupported capabilities.
 
@@ -94,7 +94,7 @@ Fine-tuning is an optimization step, not the starting architecture.
 
 ## Near-term backlog
 
-1. Formal `SubTask`/decomposition JSON schema and graph validator.
+1. Formal `SubTask`/decomposition JSON schema and graph validator.\n2. Vertical-slice quality validator/rules.
 2. Structured event/trace format keyed by task and sub-task.
 3. Filesystem sandbox + ripgrep adapter.
 4. Unified-diff parser + per-sub-task/whole-task change budgets.
