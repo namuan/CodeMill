@@ -53,6 +53,12 @@ class DecompositionReview:
 
 
 @dataclass(frozen=True)
+class ProtectedTests:
+    paths: tuple[str, ...]
+    fingerprint: str
+
+
+@dataclass(frozen=True)
 class VerificationResult:
     ok: bool
     diagnostics: tuple[str, ...] = ()

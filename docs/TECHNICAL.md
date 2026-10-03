@@ -69,7 +69,7 @@ result.md                concise human-readable summary and escalation details
 
 The exact serialization may evolve, but the information must be captured. Artifacts distinguish model claims from harness-observed facts. Record prompts or packed contexts only as needed for reproducibility and security; never persist secrets or assume conversation transcripts are authoritative. Preserve diagnostic output subject to size limits and secret redaction.
 
-A VERIFIED run requires evidence of valid RED for each newly implemented slice, test protection through implementation/repair, focused GREEN, required regression verification, accepted scope/minimality review, and final verification against the original task. If a task is already satisfied, CodeMill may report VERIFIED only when existing repository evidence demonstrates all acceptance criteria and final verification passes; it must not fabricate a failing test or unnecessary implementation. Ambiguous already-satisfied cases escalate.
+A VERIFIED run requires evidence of valid RED for each newly implemented slice, test protection through implementation/repair, focused GREEN, required regression verification, accepted scope/minimality review, and final verification against the original task. If a task is already satisfied, CodeMill may report VERIFIED only when existing repository evidence demonstrates all acceptance criteria and final verification passes; it must not fabricate a failing test or unnecessary implementation. Ambiguous already-satisfied cases escalate. Model review may reject or escalate according to harness policy, but cannot substitute for or override deterministic verification.
 
 The end-to-end v0 acceptance test runs a bounded task against a fixture repository using a real llama.cpp endpoint, then checks the final repository state and bundle. Deterministic fake-model tests cover state-machine and failure cases. Real-server integration can be opt-in in CI, but it must be run before declaring the v0 prototype usable.
 
@@ -128,7 +128,7 @@ locate(subtask, tools) -> evidence requests
 write_test(subtask, context) -> test patch
 implement(subtask, failing_test, context) -> production patch
 repair(subtask, failing_test, diagnostics, context) -> production patch
-review(subtask, diff, verification) -> review
+review_implementation(subtask, diff, tools) -> structured quality decision
 ```
 
 The harness owns sequencing. In particular, it never requests IMPLEMENT before it has accepted a failing test and demonstrated RED.
@@ -425,7 +425,9 @@ ast-grep understands local syntax structure but is not treated as a semantic typ
 Mutation/execution capabilities are harness-only:
 
 ```text
-apply_validated_patch(diff)
+apply_test_patch(diff)
+freeze_tests() -> ProtectedTests(paths, fingerprint)
+apply_production_patch(diff, protected_tests)
 git_diff(scope)
 git_status()
 run_targeted_test(target)
@@ -499,7 +501,7 @@ If the test already passes, the harness must revise the test when the acceptance
 
 ### Test immutability
 
-Once a test has demonstrated valid RED, record its patch/hash as the accepted specification for the slice. IMPLEMENT and REPAIR may modify production code only. Any attempt to modify, delete, skip, weaken, or bypass the protected test is rejected before application.
+Once a test has demonstrated valid RED, freeze the test set as a `ProtectedTests` record containing its repository-relative paths and fingerprint. IMPLEMENT and REPAIR apply patches only through the protected production-patch capability. The tool must reject any attempt to modify, delete, skip, weaken, or bypass a protected test before application, and must verify the fingerprint after patching.
 
 ### Minimal implementation
 
@@ -539,9 +541,9 @@ It is not a fresh solve. Require the smallest correction. Default target is at m
 
 ## 13. Review
 
-REVIEW is distinct from deterministic verification. It checks scope and intent: unnecessary changes, violation of the sub-task plan, accidental API expansion, suspicious deletion, or behavior not covered by verification.
+REVIEW is distinct from deterministic verification. It checks scope and intent: unnecessary changes, violation of the sub-task plan, accidental API expansion, suspicious deletion, or behavior not covered by verification. Under the minimality policy, rejection triggers bounded repair or failure; acceptance never replaces passing tests or other deterministic checks.
 
-Reviewer output should be structured and advisory/policy-driven, not a replacement for tests or compilers.
+Reviewer output is structured and policy-driven, not a substitute for tests or compilers.
 
 ## 14. State and failure semantics
 

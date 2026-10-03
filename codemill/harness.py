@@ -11,6 +11,7 @@ from .models import (
     Task,
     VerificationFailureKind,
     VerificationPurpose,
+    VerificationResult,
 )
 from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
@@ -182,10 +183,12 @@ class CodingHarness:
                 )
 
             events.append(self._event(run_id, "red_confirmed", task.id, red.diagnostics))
+            protected_tests = self.tools.freeze_tests()
+            events.append(self._event(run_id, "tests_frozen", task.id))
             events.append(self._event(run_id, "implementation_started", task.id))
             patch = self.model.create_patch(task, plan, self.tools)
             attempts += 1
-            self.tools.apply_patch(patch)
+            self.tools.apply_production_patch(patch, protected_tests)
             events.append(self._event(run_id, "patch_applied", task.id))
 
             while True:
@@ -193,30 +196,62 @@ class CodingHarness:
                 result = self.verifier.verify(VerificationPurpose.GREEN)
                 if result.ok:
                     events.append(
-                        self._event(
-                            run_id,
-                            "verify_passed",
-                            task.id,
-                            result.diagnostics,
-                        )
+                        self._event(run_id, "green_verify_passed", task.id, result.diagnostics)
                     )
-                    events.append(self._event(run_id, "subtask_verified", task.id))
-                    return SubTaskResult(
-                        task.id,
-                        RunStatus.VERIFIED,
-                        attempts,
-                        result.diagnostics,
-                        tuple(events),
+                    events.append(self._event(run_id, "regression_verify_started", task.id))
+                    result = self.verifier.verify(VerificationPurpose.REGRESSION)
+                    if result.ok:
+                        events.append(
+                            self._event(
+                                run_id,
+                                "regression_verify_passed",
+                                task.id,
+                                result.diagnostics,
+                            )
+                        )
+                        events.append(self._event(run_id, "minimality_review_started", task.id))
+                        diff = self.tools.git_diff()
+                        review_response = self.model.review_implementation(
+                            task,
+                            diff,
+                            self.tools,
+                        )
+                        review = parse_decomposition_review(review_response)
+                        if review.accepted:
+                            events.append(
+                                self._event(run_id, "minimality_review_accepted", task.id)
+                            )
+                            events.append(self._event(run_id, "subtask_verified", task.id))
+                            return SubTaskResult(
+                                task.id,
+                                RunStatus.VERIFIED,
+                                attempts,
+                                result.diagnostics,
+                                tuple(events),
+                            )
+                        result = VerificationResult(False, review.findings)
+                        events.append(
+                            self._event(
+                                run_id,
+                                "minimality_review_rejected",
+                                task.id,
+                                review.findings,
+                            )
+                        )
+                    else:
+                        events.append(
+                            self._event(
+                                run_id,
+                                "regression_verify_failed",
+                                task.id,
+                                result.diagnostics,
+                            )
+                        )
+                else:
+                    events.append(
+                        self._event(run_id, "green_verify_failed", task.id, result.diagnostics)
                     )
 
-                events.append(
-                    self._event(
-                        run_id,
-                        "verify_failed",
-                        task.id,
-                        result.diagnostics,
-                    )
-                )
                 if attempts - 1 >= self.max_repairs:
                     events.append(
                         self._event(
@@ -245,7 +280,7 @@ class CodingHarness:
                 events.append(self._event(run_id, "repair_started", task.id, result.diagnostics))
                 patch = self.model.repair_patch(task, result.diagnostics, self.tools)
                 attempts += 1
-                self.tools.apply_patch(patch)
+                self.tools.apply_production_patch(patch, protected_tests)
                 events.append(self._event(run_id, "repair_patch_applied", task.id))
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)

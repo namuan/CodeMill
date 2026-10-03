@@ -3,6 +3,7 @@ from dataclasses import asdict
 
 from codemill.harness import CodingHarness
 from codemill.models import (
+    ProtectedTests,
     RunStatus,
     SubTask,
     Task,
@@ -15,11 +16,27 @@ from codemill.models import (
 class FakeTools:
     def __init__(self):
         self.patches = []
+        self.freeze_calls = 0
+        self.test_protection = None
+        self.production_protections = []
 
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
+    def git_diff(self): return "diff"
     def apply_test_patch(self, patch): self.patches.append(f"test:{patch}")
-    def apply_patch(self, patch): self.patches.append(f"implementation:{patch}")
+
+    def freeze_tests(self):
+        self.freeze_calls += 1
+        self.test_protection = ProtectedTests(("tests/test_ST-001.py",), "test-fingerprint")
+        return self.test_protection
+
+    def apply_production_patch(self, patch, protected_tests):
+        if protected_tests != self.test_protection:
+            raise PermissionError("protected test set mismatch")
+        if patch == "modify-protected-test":
+            raise PermissionError("implementation attempted to modify a protected test")
+        self.production_protections.append(protected_tests)
+        self.patches.append(f"implementation:{patch}")
 
 
 class FakeModel:
@@ -42,6 +59,8 @@ class FakeModel:
     def locate_and_plan(self, task, tools): return f"plan {task.id}"
     def create_test_patch(self, task, plan, tools): return f"test patch {task.id}"
     def create_patch(self, task, plan, tools): return f"patch {task.id}"
+    def review_implementation(self, task, diff, tools):
+        return json.dumps({"accepted": True, "findings": []})
     def repair_patch(self, task, diagnostics, tools): return f"repair {task.id}"
 
 
@@ -62,6 +81,7 @@ def test_repairs_subtask_then_runs_final_verification():
         VerificationResult(False, ("type error",)),
         VerificationResult(True),
         VerificationResult(True),
+        VerificationResult(True),
     ])
 
     result = CodingHarness(FakeModel(), tools, verifier).run(Task("fix bug"))
@@ -77,12 +97,118 @@ def test_repairs_subtask_then_runs_final_verification():
         VerificationPurpose.RED,
         VerificationPurpose.GREEN,
         VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
         VerificationPurpose.FINAL,
     ]
     assert result.subtasks[0].status is RunStatus.VERIFIED
     assert "final_verify_started" in [event.name for event in result.events]
     assert all(event.run_id == result.run_id for event in result.events)
     assert all(event.subtask_id == "ST-001" for event in result.subtasks[0].events)
+
+
+def test_freezes_red_test_before_production_patches():
+    tools = FakeTools()
+    verifier = SequenceVerifier([
+        VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+    ])
+
+    result = CodingHarness(FakeModel(), tools, verifier).run(Task("feature"))
+
+    names = [event.name for event in result.events]
+    assert names.index("red_confirmed") < names.index("tests_frozen")
+    assert names.index("tests_frozen") < names.index("implementation_started")
+    assert tools.freeze_calls == 1
+    assert tools.production_protections == [tools.test_protection]
+
+
+def test_rejects_production_patch_that_modifies_a_protected_test():
+    class TestEditingModel(FakeModel):
+        def create_patch(self, task, plan, tools):
+            return "modify-protected-test"
+
+    tools = FakeTools()
+    verifier = SequenceVerifier([
+        VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+    ])
+
+    result = CodingHarness(TestEditingModel(), tools, verifier).run(Task("feature"))
+
+    assert result.status is RunStatus.FAILED
+    assert result.diagnostics == (
+        "PermissionError: implementation attempted to modify a protected test",
+    )
+    assert tools.patches == ["test:test patch ST-001"]
+    assert verifier.purposes == [VerificationPurpose.RED]
+
+
+def test_repairs_minimality_review_findings_before_verifying_slice():
+    class ReviewModel(FakeModel):
+        def __init__(self):
+            super().__init__()
+            self.review_calls = 0
+
+        def review_implementation(self, task, diff, tools):
+            self.review_calls += 1
+            if self.review_calls == 1:
+                return json.dumps(
+                    {"accepted": False, "findings": ["unnecessary helper"]}
+                )
+            return json.dumps({"accepted": True, "findings": []})
+
+    model = ReviewModel()
+    tools = FakeTools()
+    verifier = SequenceVerifier([
+        VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+    ])
+
+    result = CodingHarness(model, tools, verifier).run(Task("feature"))
+
+    assert result.status is RunStatus.VERIFIED
+    assert model.review_calls == 2
+    assert tools.patches[-1] == "implementation:repair ST-001"
+    names = [event.name for event in result.events]
+    assert "minimality_review_rejected" in names
+    assert "minimality_review_accepted" in names
+    assert "regression_verify_failed" not in names
+
+
+def test_repairs_regression_failure_without_changing_protected_test():
+    tools = FakeTools()
+    verifier = SequenceVerifier([
+        VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+        VerificationResult(True),
+        VerificationResult(False, ("existing test failed",)),
+        VerificationResult(True),
+        VerificationResult(True),
+        VerificationResult(True),
+    ])
+
+    result = CodingHarness(FakeModel(), tools, verifier).run(Task("feature"))
+
+    assert result.status is RunStatus.VERIFIED
+    assert tools.patches == [
+        "test:test patch ST-001",
+        "implementation:patch ST-001",
+        "implementation:repair ST-001",
+    ]
+    assert tools.freeze_calls == 1
+    assert tools.production_protections == [tools.test_protection, tools.test_protection]
+    assert verifier.purposes == [
+        VerificationPurpose.RED,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
+        VerificationPurpose.FINAL,
+    ]
 
 
 def test_executes_dependency_ordered_subtasks():
@@ -94,7 +220,9 @@ def test_executes_dependency_ordered_subtasks():
     verifier = SequenceVerifier([
         VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
         VerificationResult(True),
+        VerificationResult(True),
         VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+        VerificationResult(True),
         VerificationResult(True),
         VerificationResult(True),
     ])
@@ -224,7 +352,7 @@ def test_records_decomposition_errors_as_failed_runs():
 
 def test_records_patch_errors_on_the_subtask_result():
     class FailingTools(FakeTools):
-        def apply_patch(self, patch):
+        def apply_production_patch(self, patch, protected_tests):
             raise OSError("patch rejected")
 
     result = CodingHarness(
@@ -254,7 +382,7 @@ def test_records_final_verification_errors_as_failed_runs():
                     ("behavior absent",),
                     VerificationFailureKind.EXPECTED_BEHAVIOR,
                 )
-            if purpose is VerificationPurpose.GREEN:
+            if purpose in (VerificationPurpose.GREEN, VerificationPurpose.REGRESSION):
                 return VerificationResult(True)
             raise RuntimeError("test runner unavailable")
 

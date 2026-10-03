@@ -37,7 +37,7 @@ A completed run produces a reviewable artifact bundle containing:
 - repair attempts and unresolved issues, including escalation reasons;
 - repository revision and run metadata sufficient to identify the state that was verified.
 
-The v0 verified outcome requires demonstrated valid RED before implementation, protected accepted tests, focused GREEN, required regression checks, final verification against the original task, and a reviewable result (including a no-change result when the task is already satisfied). The prototype must fail closed or escalate when it cannot establish these conditions. Model review is advisory and cannot override deterministic verification.
+The v0 verified outcome requires demonstrated valid RED before implementation, protected accepted tests, focused GREEN, required regression checks, accepted scope/minimality review, final verification against the original task, and a reviewable result (including a no-change result when the task is already satisfied). The prototype must fail closed or escalate when it cannot establish these conditions. Model review may reject or escalate according to harness policy, but it cannot substitute for or override deterministic verification.
 
 The v0 implementation covers the usable core of Phases 1–4, 6–7, plus minimum per-stage context construction from Phase 5. Full context ranking/provenance, persistent scoped learning, resumable runs, and evaluation infrastructure are not prerequisites unless needed to preserve safety or correctness.
 
