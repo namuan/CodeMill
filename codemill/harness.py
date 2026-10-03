@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from uuid import uuid4
 
-from .models import RunResult, RunStatus, SubTask, SubTaskResult, Task
+from .models import RunEvent, RunResult, RunStatus, SubTask, SubTaskResult, Task
+from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
 from .verifier import Verifier
 
@@ -15,89 +17,189 @@ class CodingHarness:
     max_repairs: int = 3
 
     def run(self, task: Task) -> RunResult:
-        events = ["decompose"]
-        subtasks = self.model.decompose(task, self.tools)
-        completed: set[str] = set()
+        run_id = uuid4().hex
+        events = [self._event(run_id, "run_started")]
+        events.append(self._event(run_id, "decompose_started"))
+        try:
+            proposed_subtasks = self.model.decompose(task, self.tools)
+        except Exception as error:
+            diagnostics = self._exception_diagnostic(error)
+            events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
+            return RunResult(RunStatus.FAILED, 0, run_id, diagnostics, tuple(events))
+
+        events.append(self._event(run_id, "decompose_completed"))
+        try:
+            subtasks = order_subtasks(proposed_subtasks)
+        except ValueError as error:
+            diagnostics = (str(error),)
+            events.append(self._event(run_id, "plan_rejected", diagnostics=diagnostics))
+            events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
+
+        events.append(self._event(run_id, "plan_validated"))
         results: list[SubTaskResult] = []
         attempts = 0
 
         for subtask in subtasks:
-            missing = set(subtask.depends_on) - completed
-            if missing:
-                diagnostics = (
-                    f"{subtask.id} has unmet dependencies: {', '.join(sorted(missing))}",
-                )
-                events.append("escalated")
-                return RunResult(
-                    RunStatus.ESCALATED,
-                    attempts,
-                    diagnostics,
-                    tuple(events),
-                    tuple(results),
-                )
-
-            result = self._run_subtask(subtask)
+            result = self._run_subtask(run_id, subtask)
             results.append(result)
             attempts += result.attempts
-            events.extend(f"{subtask.id}:{event}" for event in result.events)
+            events.extend(result.events)
 
             if result.status is not RunStatus.VERIFIED:
+                events.append(
+                    self._event(
+                        run_id,
+                        "run_failed",
+                        subtask_id=subtask.id,
+                        diagnostics=result.diagnostics,
+                    )
+                )
                 return RunResult(
                     result.status,
                     attempts,
+                    run_id,
                     result.diagnostics,
                     tuple(events),
                     tuple(results),
                 )
 
-            completed.add(subtask.id)
-
-        events.append("final_verify")
-        final = self.verifier.verify()
-        if not final.ok:
-            events.append("exhausted")
+        events.append(self._event(run_id, "final_verify_started"))
+        try:
+            final = self.verifier.verify()
+        except Exception as error:
+            diagnostics = self._exception_diagnostic(error)
+            events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
             return RunResult(
-                RunStatus.EXHAUSTED,
+                RunStatus.FAILED,
                 attempts,
+                run_id,
+                diagnostics,
+                tuple(events),
+                tuple(results),
+            )
+
+        if not final.ok:
+            events.append(
+                self._event(run_id, "final_verify_failed", diagnostics=final.diagnostics)
+            )
+            events.append(self._event(run_id, "run_failed", diagnostics=final.diagnostics))
+            return RunResult(
+                RunStatus.FAILED,
+                attempts,
+                run_id,
                 final.diagnostics,
                 tuple(events),
                 tuple(results),
             )
 
-        events.append("verified")
+        events.append(self._event(run_id, "final_verify_passed"))
+        events.append(self._event(run_id, "run_verified"))
         return RunResult(
             RunStatus.VERIFIED,
             attempts,
+            run_id,
             final.diagnostics,
             tuple(events),
             tuple(results),
         )
 
-    def _run_subtask(self, task: SubTask) -> SubTaskResult:
-        events = ["locate", "plan"]
-        plan = self.model.locate_and_plan(task, self.tools)
+    def _run_subtask(self, run_id: str, task: SubTask) -> SubTaskResult:
+        events: list[RunEvent] = [self._event(run_id, "subtask_started", task.id)]
+        attempts = 0
 
-        events.append("patch")
-        self.tools.apply_patch(self.model.create_patch(task, plan, self.tools))
-        attempts = 1
+        try:
+            events.append(self._event(run_id, "locate_started", task.id))
+            plan = self.model.locate_and_plan(task, self.tools)
+            events.append(self._event(run_id, "plan_created", task.id))
 
-        while True:
-            events.append("verify")
-            result = self.verifier.verify()
-            if result.ok:
-                events.extend(("review", "verified"))
-                return SubTaskResult(
-                    task.id, RunStatus.VERIFIED, attempts, result.diagnostics, tuple(events)
-                )
-
-            if attempts - 1 >= self.max_repairs:
-                events.append("exhausted")
-                return SubTaskResult(
-                    task.id, RunStatus.EXHAUSTED, attempts, result.diagnostics, tuple(events)
-                )
-
-            events.append("repair")
-            self.tools.apply_patch(
-                self.model.repair_patch(task, result.diagnostics, self.tools)
-            )
+            events.append(self._event(run_id, "implementation_started", task.id))
+            patch = self.model.create_patch(task, plan, self.tools)
             attempts += 1
+            self.tools.apply_patch(patch)
+            events.append(self._event(run_id, "patch_applied", task.id))
+
+            while True:
+                events.append(self._event(run_id, "verify_started", task.id))
+                result = self.verifier.verify()
+                if result.ok:
+                    events.append(
+                        self._event(
+                            run_id,
+                            "verify_passed",
+                            task.id,
+                            result.diagnostics,
+                        )
+                    )
+                    events.append(self._event(run_id, "subtask_verified", task.id))
+                    return SubTaskResult(
+                        task.id,
+                        RunStatus.VERIFIED,
+                        attempts,
+                        result.diagnostics,
+                        tuple(events),
+                    )
+
+                events.append(
+                    self._event(
+                        run_id,
+                        "verify_failed",
+                        task.id,
+                        result.diagnostics,
+                    )
+                )
+                if attempts - 1 >= self.max_repairs:
+                    events.append(
+                        self._event(
+                            run_id,
+                            "repair_budget_exhausted",
+                            task.id,
+                            result.diagnostics,
+                        )
+                    )
+                    events.append(
+                        self._event(
+                            run_id,
+                            "subtask_failed",
+                            task.id,
+                            result.diagnostics,
+                        )
+                    )
+                    return SubTaskResult(
+                        task.id,
+                        RunStatus.FAILED,
+                        attempts,
+                        result.diagnostics,
+                        tuple(events),
+                    )
+
+                events.append(self._event(run_id, "repair_started", task.id, result.diagnostics))
+                patch = self.model.repair_patch(task, result.diagnostics, self.tools)
+                attempts += 1
+                self.tools.apply_patch(patch)
+                events.append(self._event(run_id, "repair_patch_applied", task.id))
+        except Exception as error:
+            diagnostics = self._exception_diagnostic(error)
+            events.append(
+                self._event(run_id, "subtask_failed", task.id, diagnostics)
+            )
+            return SubTaskResult(
+                task.id,
+                RunStatus.FAILED,
+                attempts,
+                diagnostics,
+                tuple(events),
+            )
+
+    @staticmethod
+    def _event(
+        run_id: str,
+        name: str,
+        subtask_id: str | None = None,
+        diagnostics: tuple[str, ...] = (),
+    ) -> RunEvent:
+        return RunEvent(run_id, name, subtask_id, diagnostics)
+
+    @staticmethod
+    def _exception_diagnostic(error: Exception) -> tuple[str, ...]:
+        return (f"{type(error).__name__}: {error}",)

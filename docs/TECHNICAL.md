@@ -558,7 +558,7 @@ IMPLEMENT is unreachable until valid RED has been recorded. REPAIR cannot mutate
 
 Run terminal statuses are VERIFIED, ESCALATED, and FAILED. Repair-budget exhaustion, verifier failure, and operational errors are FAILED outcomes with structured reason codes; use ESCALATED when human input or unsupported capability is required. Sub-task outcomes remain non-terminal workflow results and must not be confused with the run status.
 
-Every transition emits a structured event keyed by run ID and sub-task ID.
+Every transition emits a structured event with a run ID, event name, optional sub-task ID, and diagnostics. Event order is authoritative; events are recorded at each model-operation boundary, patch application, verifier result, state transition, and terminal outcome.
 
 ## 15. Security
 
