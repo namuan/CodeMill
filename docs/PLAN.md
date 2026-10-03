@@ -2,80 +2,102 @@
 
 ## Goal
 
-Build a specialised coding harness that makes small language models useful for real repository-level software development by reducing each model decision to a bounded, context-rich, verifiable operation.
+Build a specialised coding harness that makes small language models useful for real repository-level software development.
 
-The primary success metric is **cost per independently verified correct patch**.
+CodeMill begins every developer task by decomposing it into **minimal, dependency-aware, independently verifiable sub-tasks**. Each sub-task then runs through the same bounded coding cycle:
 
-## Phase 0 — Bootstrap
+```text
+LOCATE -> PLAN -> PATCH -> VERIFY -> REVIEW
+                         ^       |
+                         + REPAIR+
+```
 
-Define task/result types, narrow model/tool/verifier interfaces, and the bounded `LOCATE -> PATCH -> VERIFY -> REPAIR` loop.
+Only verified sub-tasks unlock their dependents. After every sub-task completes, CodeMill runs final verification against the original task and acceptance criteria.
 
-**Exit:** a fake model produces a patch, receives deterministic failure feedback, repairs it, and finishes verified.
+The primary success metric is **cost per independently verified correct task**, with sub-task success and repair behavior recorded as diagnostic metrics.
 
-## Phase 1 — Local repository tools
+## Phase 0 — Decomposition-aware bootstrap
 
-Implement safe deterministic tools:
+Define task, sub-task, dependency, result, model, tool, and verifier contracts.
 
-- `search_text` using ripgrep;
-- ranged `read_file`;
-- symbol discovery using tree-sitter or LSP;
-- references and test discovery;
-- validated unified-diff application;
-- Git diff/status inspection.
+Implement:
 
-Guardrails: repository-root sandbox, path traversal prevention, patch size/file budgets, sensitive-path deny rules, and no arbitrary shell exposed to the model.
+- `DECOMPOSE` as the first model operation;
+- dependency-ordered sub-task execution;
+- per-sub-task `LOCATE -> PLAN -> PATCH -> VERIFY -> REPAIR -> REVIEW`;
+- bounded repair attempts per sub-task;
+- final whole-task verification;
+- escalation for invalid/unmet dependency plans.
 
-## Phase 2 — Verification pipeline
+**Exit:** fake model tests demonstrate decomposition, dependency ordering, per-sub-task repair, and final verification.
 
-Run cheapest checks first:
+## Phase 1 — Structured decomposition protocol
 
-1. patch validity;
-2. formatter;
-3. linter/static checks;
-4. type checker/compiler;
-5. targeted tests;
-6. broader affected tests;
-7. diff policy review.
+Replace free-form decomposition with schema-constrained output. A sub-task must contain:
 
-Normalize failures before returning them to the model.
+- stable ID;
+- objective;
+- observable acceptance criteria;
+- constraints;
+- dependency IDs;
+- expected scope/change budget.
 
-## Phase 3 — Context engine
+Validate the graph before execution: unique IDs, existing dependencies, no cycles, and deterministic topological order.
+
+Add decomposition quality rules: each sub-task should represent one coherent repository change and be independently verifiable. Reject plans that merely restate the original task, create unnecessarily broad sub-tasks, or split work so finely that verification has no meaningful signal.
+
+## Phase 2 — Local repository tools
+
+Implement safe deterministic tools: ripgrep search, ranged reads, tree/symbol discovery, references/tests, validated unified-diff application, and Git diff/status inspection.
+
+Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, and no arbitrary shell exposed to the model.
+
+## Phase 3 — Verification pipeline
+
+For every sub-task run cheapest checks first: patch validity, formatter, linter/static checks, compiler/type checker, targeted tests, affected tests, and diff policy review.
+
+Final task verification then runs the checks needed to prove the combined changes satisfy the original acceptance criteria.
+
+Normalize failures before returning them to REPAIR.
+
+## Phase 4 — Context engine
 
 Index files, symbols, definitions, imports, references, tests, repository conventions, and selected Git history. Start without embeddings.
 
-Use a token-budgeted context packer. Rank target definitions, interfaces, and tests above broad repository material. Every fragment records provenance and `why_selected`.
+Build context **per sub-task**, not per original task. Rank target definitions, interfaces, tests, direct dependencies, and changes produced by prerequisite sub-tasks. Every fragment records provenance and `why_selected`.
 
-## Phase 4 — 9B model adapter
+## Phase 5 — 9B model adapter
 
-Add an OpenAI-compatible local inference adapter so vLLM/llama.cpp-style servers can be tested without coupling orchestration to a provider.
+Add an OpenAI-compatible local inference adapter for local serving stacks.
 
-Keep model operations specialised: **LOCATE, PLAN, PATCH, REPAIR, REVIEW**. Prefer schema-constrained output.
+Keep model operations specialised: **DECOMPOSE, LOCATE, PLAN, PATCH, REPAIR, REVIEW**. Prefer schema-constrained output. Evaluate each operation independently so model weaknesses can be attributed to decomposition, navigation, generation, or repair.
 
-## Phase 5 — Change budgets and escalation
+## Phase 6 — Change budgets and escalation
 
-Enforce maximum files/LOC and policies for dependencies, public APIs, schemas, generated files, and sensitive paths.
+Apply budgets per sub-task and across the whole task: files/LOC, dependencies, public APIs, schemas, generated files, and sensitive paths.
 
-Escalate when policy is exceeded, context remains ambiguous, repairs oscillate, verification is unavailable, or the task requires unsupported capabilities.
+Escalate when decomposition is invalid, policy is exceeded, context remains ambiguous, repairs oscillate, verification is unavailable, or the task requires unsupported capabilities.
 
-## Phase 6 — Evaluation
+## Phase 7 — Evaluation
 
-Build tasks from historical commits: checkout N-1, provide the original issue/PR intent without commit N, run CodeMill, then execute public and hidden verification.
+Build tasks from historical commits: checkout N-1, provide original issue/PR intent without commit N, let CodeMill decompose and execute, then run public and hidden verification.
 
-Track verified-task rate, hidden-test pass rate, regressions, unnecessary LOC/files, tool calls, tokens, repairs, wall time, GPU time, escalation rate, and human intervention.
+Track task success plus decomposition metrics: number of sub-tasks, dependency depth, failed/replanned sub-tasks, verification isolation, unnecessary edits, tokens/tool calls per sub-task, repairs, wall/GPU time, escalation, and human intervention.
 
 Compare small-model+harness runs with stronger-model baselines under equivalent verification.
 
-## Phase 7 — Learning from traces
+## Phase 8 — Learning from traces
 
-Only after evaluation data exists, analyze recurring navigation/generation/repair failures. Then consider trajectory distillation, SFT/LoRA, or verifier-driven optimization.
+Once evaluation data exists, analyze decomposition, navigation, generation, and repair failure modes separately. Then consider trajectory distillation, SFT/LoRA, or verifier-driven optimization.
 
 Fine-tuning is an optimization step, not the starting architecture.
 
 ## Near-term backlog
 
-1. Filesystem sandbox + ripgrep adapter.
-2. Unified-diff parser + change budgets.
-3. Allowlisted subprocess verifier.
-4. Structured event/trace format.
-5. OpenAI-compatible local model adapter.
-6. Fixture repository + first end-to-end benchmark.
+1. Formal `SubTask`/decomposition JSON schema and graph validator.
+2. Structured event/trace format keyed by task and sub-task.
+3. Filesystem sandbox + ripgrep adapter.
+4. Unified-diff parser + per-sub-task/whole-task change budgets.
+5. Allowlisted subprocess verifier with targeted and final modes.
+6. OpenAI-compatible local model adapter.
+7. Fixture repository + first decomposition-to-verification benchmark.
