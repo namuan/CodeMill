@@ -9,6 +9,8 @@ from .models import (
     SubTask,
     SubTaskResult,
     Task,
+    VerificationFailureKind,
+    VerificationPurpose,
 )
 from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
@@ -83,10 +85,15 @@ class CodingHarness:
             events.extend(result.events)
 
             if result.status is not RunStatus.VERIFIED:
+                terminal_event = (
+                    "run_escalated"
+                    if result.status is RunStatus.ESCALATED
+                    else "run_failed"
+                )
                 events.append(
                     self._event(
                         run_id,
-                        "run_failed",
+                        terminal_event,
                         subtask_id=subtask.id,
                         diagnostics=result.diagnostics,
                     )
@@ -102,7 +109,7 @@ class CodingHarness:
 
         events.append(self._event(run_id, "final_verify_started"))
         try:
-            final = self.verifier.verify()
+            final = self.verifier.verify(VerificationPurpose.FINAL)
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
             events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
@@ -149,6 +156,32 @@ class CodingHarness:
             plan = self.model.locate_and_plan(task, self.tools)
             events.append(self._event(run_id, "plan_created", task.id))
 
+            events.append(self._event(run_id, "test_write_started", task.id))
+            test_patch = self.model.create_test_patch(task, plan, self.tools)
+            self.tools.apply_test_patch(test_patch)
+            events.append(self._event(run_id, "test_patch_applied", task.id))
+
+            events.append(self._event(run_id, "red_verify_started", task.id))
+            red = self.verifier.verify(VerificationPurpose.RED)
+            if red.ok or red.failure_kind is not VerificationFailureKind.EXPECTED_BEHAVIOR:
+                diagnostics = red.diagnostics or (
+                    "focused test did not fail for the expected missing behavior",
+                )
+                events.append(
+                    self._event(run_id, "red_rejected", task.id, diagnostics)
+                )
+                events.append(
+                    self._event(run_id, "subtask_escalated", task.id, diagnostics)
+                )
+                return SubTaskResult(
+                    task.id,
+                    RunStatus.ESCALATED,
+                    attempts,
+                    diagnostics,
+                    tuple(events),
+                )
+
+            events.append(self._event(run_id, "red_confirmed", task.id, red.diagnostics))
             events.append(self._event(run_id, "implementation_started", task.id))
             patch = self.model.create_patch(task, plan, self.tools)
             attempts += 1
@@ -156,8 +189,8 @@ class CodingHarness:
             events.append(self._event(run_id, "patch_applied", task.id))
 
             while True:
-                events.append(self._event(run_id, "verify_started", task.id))
-                result = self.verifier.verify()
+                events.append(self._event(run_id, "green_verify_started", task.id))
+                result = self.verifier.verify(VerificationPurpose.GREEN)
                 if result.ok:
                     events.append(
                         self._event(

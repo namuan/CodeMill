@@ -493,7 +493,7 @@ The harness requests the smallest focused test that demonstrates the slice's obs
 
 ### RED is mandatory
 
-The harness executes the new test before any production implementation patch is accepted. RED must fail for the expected missing behavior. Syntax errors, broken fixtures, unrelated failures, or an already-passing test do not qualify.
+The harness requests and applies a focused test patch before requesting any implementation patch, then calls the verifier with purpose `RED`. The verifier result distinguishes an expected missing-behavior failure from other failures. RED is accepted only when the test fails with the expected behavior classification. A passing test, syntax error, broken fixture, or unrelated failure escalates without calling IMPLEMENT. GREEN and final verification use distinct verifier purposes so their results cannot be mistaken for RED evidence.
 
 If the test already passes, the harness must revise the test when the acceptance criterion is not actually covered, mark the slice already satisfied when evidence supports that conclusion, or escalate ambiguity. It must not manufacture production changes merely to create work.
 

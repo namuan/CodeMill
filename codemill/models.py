@@ -8,6 +8,18 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 
+class VerificationPurpose(str, Enum):
+    RED = "red"
+    GREEN = "green"
+    REGRESSION = "regression"
+    FINAL = "final"
+
+
+class VerificationFailureKind(str, Enum):
+    EXPECTED_BEHAVIOR = "expected_behavior"
+    OTHER = "other"
+
+
 @dataclass(frozen=True)
 class ExpectedScope:
     max_files: int = 3
@@ -44,6 +56,7 @@ class DecompositionReview:
 class VerificationResult:
     ok: bool
     diagnostics: tuple[str, ...] = ()
+    failure_kind: VerificationFailureKind | None = None
 
 
 @dataclass(frozen=True)
