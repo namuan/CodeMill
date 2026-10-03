@@ -174,35 +174,148 @@ Each verified sub-task changes the workspace seen by later sub-tasks. This is in
 
 Parallel execution may be explored later only for independent sub-tasks with isolated workspaces and an explicit merge/reverification strategy.
 
-## 6. Context packing
+## 6. Progressive context construction
 
-Context is built **per sub-task**. Priority:
-
-1. target symbols;
-2. relevant interfaces/types;
-3. tests covering the target;
-4. direct callers;
-5. direct dependencies;
-6. verified changes from prerequisite sub-tasks;
-7. analogous implementations;
-8. repository conventions;
-9. relevant history/docs.
-
-Every fragment records path, range, symbols, `why_selected`, and provenance. Deduplicate ranges and reserve output budget.
-
-## 7. Tools and workspace
-
-Initial capability surface:
+CodeMill does not build one generic context pack for a sub-task. Context is **stage-specific and progressively refined by deterministic evidence**.
 
 ```text
-search_text(query)
-read_file(path, start?, end?)
-apply_patch(patch)
+SubTask
+   |
+   +--> repository map + structural discovery
+   |          |
+   |          v
+   |     TEST CONTEXT
+   |          |
+   |      WRITE_TEST
+   |          |
+   |      CONFIRM_RED
+   |          |
+   |     failure evidence
+   |     stack/file/line
+   |     diagnostics
+   |          |
+   |          v
+   +--> IMPLEMENTATION CONTEXT
+              |
+        IMPLEMENT_MINIMUM
 ```
 
-Planned read capabilities include tree listing, symbol lookup, references, tests, history, and diff inspection.
+### 6.1 Repository map and discovery
 
-Pin the input commit and use a disposable worktree/container. Normalize paths relative to repository root; reject symlink escape and traversal. The LLM never receives a raw shell capability.
+Begin with inexpensive metadata rather than file contents: repository tree, source/test roots, languages, package/module boundaries, build/test configuration, and verified prerequisite slices.
+
+Derive candidate concepts and identifiers from the sub-task objective and acceptance criteria. Use structural discovery to identify the behavioral surface and its test neighborhood. Expand only as needed through definitions/declarations, imports, structurally discoverable calls/usages, nearby tests, required types/interfaces, and analogous local patterns.
+
+The context engine should represent relationships between evidence rather than treating search hits as an unordered bag. For example:
+
+```text
+acceptance criterion
+   |
+public behavior
+   +-- nearby tests / fixtures
+   +-- target definition
+          +-- relevant call/import
+```
+
+### 6.2 Test context
+
+WRITE_TEST receives an aggressively small behavioral context:
+
+1. sub-task objective and acceptance criteria;
+2. constraints;
+3. closest existing test conventions;
+4. fixtures/helpers needed to exercise the behavior;
+5. public function/API/interface under test;
+6. types required to construct inputs and assert outputs;
+7. relevant verified prerequisite changes.
+
+Do not automatically include implementation internals merely because discovery found them. The test should encode requested behavior, not mirror a proposed implementation.
+
+### 6.3 RED-driven implementation context
+
+CONFIRM_RED is also a retrieval step. Parse deterministic failure evidence such as assertion output, exception type/message, stack frames, file/line locations, compiler/type diagnostics, and implicated symbols.
+
+These signals outrank speculative pre-RED retrieval. Read bounded ranges around implicated locations and structurally discover the immediately relevant definitions/calls/imports.
+
+IMPLEMENT receives:
+
+1. sub-task and acceptance criteria;
+2. accepted immutable failing test;
+3. normalized RED diagnostics;
+4. implicated production symbols/ranges;
+5. required interfaces/types;
+6. closest relevant implementation/error-handling convention;
+7. relevant verified prerequisite changes;
+8. constraints and remaining change budget.
+
+REPAIR uses the same principle: new GREEN failures refine context rather than causing broad repository expansion.
+
+### 6.4 Context fragment provenance
+
+Every fragment should carry:
+
+```text
+path
+start_line
+end_line
+symbols
+kind
+why_selected
+source
+score
+```
+
+Possible sources include structural search, textual search, nearby test discovery, RED stack frame, compiler diagnostic, verified prerequisite diff, and explicit model evidence request.
+
+Deduplicate overlapping ranges and record why every fragment entered the prompt. This makes retrieval quality measurable.
+
+### 6.5 Context budget
+
+Optimize for **minimum sufficient evidence**, not maximum context-window utilization. Priority for implementation is normally: slice/acceptance criteria, failing test, RED diagnostics, exact implicated symbols, required interfaces/types, direct relevant relationships, analogous local convention, prerequisite diff, then repository documentation.
+
+If the budget is exceeded, discard lower-ranked evidence rather than truncating high-value fragments blindly.
+
+## 7. Retrieval tools and workspace
+
+CodeMill uses **ast-grep as the primary retrieval engine for source code**. ast-grep provides syntax/AST-aware structural matching and structured result ranges suitable for deterministic context construction. It is used for retrieval only; its rewrite functionality is not part of CodeMill's mutation path.
+
+Use **ripgrep (rg) as the fallback for non-code and textual evidence**: Markdown/documentation, configuration/data files without useful structural support, literal error strings, generated text, and textual searches that do not require syntax awareness.
+
+The semantic read capability surface is:
+
+```text
+list_tree(path, depth)
+find_definitions(name)
+find_structural(pattern)
+find_calls(name)
+find_imports(name)
+find_tests_for(symbol_or_path)
+read_range(path, start, end)
+search_text(query, paths?)
+```
+
+The harness translates these semantic operations into ast-grep or rg invocations. The model does not receive either CLI or a raw shell.
+
+ast-grep understands local syntax structure but is not treated as a semantic type/reference engine. CodeMill should not claim compiler/LSP-level certainty from structural matches. If evaluation later shows that type resolution, true reference resolution, or call hierarchy is a retrieval bottleneck, an LSP/compiler-backed layer can be considered then.
+
+Mutation/execution capabilities are harness-only:
+
+```text
+apply_validated_patch(diff)
+git_diff(scope)
+git_status()
+run_targeted_test(target)
+run_regression_checks(scope)
+run_formatter()
+run_linter()
+run_typecheck()
+run_build()
+protect_test(paths_or_hash)
+check_allowed_paths(diff)
+check_change_budget(diff)
+```
+
+Pin the input commit and use a disposable worktree/container. Normalize paths relative to repository root; reject symlink escape and traversal. All subprocesses are allowlisted and parameterized by the harness.
 
 ## 8. Patch policy and budgets
 
@@ -388,7 +501,7 @@ Also measure decomposition size/depth, per-sub-task success, retrieval quality, 
 - Python 3.11+ with uv and `pyproject.toml`.
 - Standard library first; pytest for tests.
 - sequential dependency-aware execution first.
-- ripgrep for textual retrieval.
+- ast-grep for primary source-code structural retrieval; ripgrep only for non-code/textual fallback.
 - unified diffs for mutation.
 - protected test patches/hashes after valid RED.
 - separate test and production patch policies.
