@@ -1,8 +1,11 @@
 import json
 import subprocess
 
+import pytest
+
 from codemill.harness import CodingHarness
 from codemill.models import (
+    ProtectedTestMutationError,
     RunStatus,
     Task,
     VerificationFailureKind,
@@ -382,6 +385,50 @@ new file mode 100644
         raise AssertionError("mismatched diff headers were accepted")
 
     assert not (tmp_path.parent / "outside.py").exists()
+
+
+def test_test_patch_cannot_modify_preexisting_test_files(tmp_path):
+    initialize_repository(tmp_path)
+    (tmp_path / "tests").mkdir()
+    existing = tmp_path / "tests" / "test_existing.py"
+    existing.write_text("def test_existing(): assert True\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "add test"], check=True)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_existing.py b/tests/test_existing.py
+index 0000000..0000000 100644
+--- a/tests/test_existing.py
++++ b/tests/test_existing.py
+@@ -1 +1,2 @@
+ def test_existing(): assert True
++def test_new(): assert True
+"""
+
+    with pytest.raises(ProtectedTestMutationError, match="pre-existing test files"):
+        tools.apply_test_patch(patch)
+
+    assert existing.read_text() == "def test_existing(): assert True\n"
+
+
+def test_normalizes_incorrect_hunk_counts_without_changing_patch_content(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_hunk.py b/tests/test_hunk.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_hunk.py
+@@ -0,0 +1,9 @@
++def test_hunk():
++    assert 1 == 1
+"""
+
+    target = tools.apply_test_patch(patch)
+
+    assert target.paths == ("tests/test_hunk.py",)
+    assert (tmp_path / "tests" / "test_hunk.py").read_text() == (
+        "def test_hunk():\n    assert 1 == 1\n"
+    )
 
 
 def test_git_diff_reports_final_worktree_state_not_patch_history(tmp_path):

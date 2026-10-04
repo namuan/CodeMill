@@ -137,11 +137,16 @@ class LlamaCppModelDriver:
                     "Create the smallest independently verifiable vertical slices for behavior "
                     "that is not already satisfied. Return an empty subtasks array only if the "
                     "task is already satisfied; the independent review will require evidence and "
-                    "a runnable existing test target before accepting that decision. Give every "
-                    "slice a non-empty stable ID such as ST-001 and a non-empty objective. "
+                    "a runnable existing test target before accepting that decision. Do not make "
+                    "test-writing a subtask because the harness creates tests; every non-empty "
+                    "slice must include production behavior. Give every slice a non-empty stable "
+                    "ID such as ST-001 and a non-empty objective. "
                     "Include at least one observable acceptance criterion, constraints, only "
-                    "necessary dependencies, and a conservative expected scope. Set scope "
-                    "permissions false unless the task requires them."
+                    "necessary dependencies, and a conservative expected scope. Include both "
+                    "planned production paths in planned_paths; the harness creates the focused "
+                    "test file separately. Subtask file and line budgets apply to production edits, "
+                    "while the user's task scope bounds total test and production changes. Set "
+                    "scope permissions false unless the task requires them."
                 ),
             },
             DECOMPOSITION_SCHEMA,
@@ -154,15 +159,40 @@ class LlamaCppModelDriver:
         subtasks: tuple[SubTask, ...],
         tools: CodingTools,
     ) -> str:
+        context_tasks = subtasks or (
+            SubTask(
+                "SATISFACTION-REVIEW",
+                task.objective,
+                task.acceptance_criteria,
+                task.constraints,
+                (),
+                task.expected_scope,
+            ),
+        )
+        evidence_context = [
+            {
+                "subtask_id": subtask.id,
+                "locate_context": ContextBuilder(tools)
+                .build_locate_context(subtask, char_budget=3500)
+                .render(),
+                "test_context": ContextBuilder(tools)
+                .build_test_context(subtask, char_budget=3500)
+                .render(),
+            }
+            for subtask in context_tasks[:4]
+        ]
         result = self._complete(
             "review_decomposition",
             {
                 "task": asdict(task),
                 "subtasks": [asdict(subtask) for subtask in subtasks],
                 "repository_context": summarize_repository(tools).render(),
+                "evidence_context": evidence_context,
                 "instructions": (
-                    "Reject layer-oriented or bundled slices that are not minimal, "
-                    "independently observable, or meaningfully verifiable. If subtasks are "
+                    "Reject test-only or layer-oriented slices and bundled slices that are not "
+                    "minimal, independently observable, or meaningfully verifiable. Tests are "
+                    "created by the harness, so every implementation subtask must include "
+                    "production behavior. If subtasks are "
                     "empty, accept only when existing behavior already satisfies every task "
                     "criterion, provide specific evidence, and identify existing tests that "
                     "verify those criteria. For ordinary plans set already_satisfied false, "
@@ -198,8 +228,12 @@ class LlamaCppModelDriver:
                 "plan": plan,
                 "context": context.render(),
                 "instructions": (
-                    "Return the smallest unified diff that adds a focused behavioral test. "
-                    "Do not change production files."
+                    "Return the smallest syntactically valid git-apply-compatible unified diff "
+                    "that adds a focused behavioral test. For a new file include `diff --git`, "
+                    "`new file mode 100644`, `--- /dev/null`, the matching `+++ b/path`, and "
+                    "an @@ hunk whose line counts exactly match its added lines. Add a new "
+                    "test file and never modify a pre-existing test file. Return no markdown or "
+                    "explanation, and do not change production files."
                 ),
             },
             PATCH_SCHEMA,

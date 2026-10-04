@@ -151,8 +151,6 @@ def parse_decomposition_review(payload: str) -> DecompositionReview:
     target = _parse_verification_target(target_value) if target_value is not None else None
     if already_satisfied and (not accepted or not evidence or target is None or not target.paths):
         raise ValueError("already-satisfied review requires acceptance, evidence, and test paths")
-    if not already_satisfied and (evidence or (target is not None and target.paths)):
-        raise ValueError("satisfaction evidence is only allowed for already-satisfied tasks")
     return DecompositionReview(accepted, findings, already_satisfied, evidence, target)
 
 

@@ -22,6 +22,32 @@ def test_classifies_focused_assertion_failure_as_expected_red(tmp_path):
     assert any("test_feature" in diagnostic for diagnostic in result.diagnostics)
 
 
+def test_classifies_assertion_with_compact_pytest_trace_as_expected_red():
+    output = (
+        "FAILED tests/test_feature.py::test_feature - AssertionError\n"
+        "tests/test_feature.py:2: AssertionError\nE assert 1 == 2"
+    )
+
+    assert PytestVerifier._is_assertion_failure(
+        output,
+        VerificationTarget(("tests/test_feature.py",)),
+    )
+
+
+def test_classifies_assertion_error_summary_as_expected_red():
+    output = (
+        "FAILED test_feature.py::test_feature - AssertionError\n"
+        "test_feature.py:2: in test_feature\n"
+        "    assert actual == expected\n"
+        "E   AssertionError: assert 'actual' == 'expected'"
+    )
+
+    assert PytestVerifier._is_assertion_failure(
+        output,
+        VerificationTarget(("test_feature.py",)),
+    )
+
+
 def test_classifies_collection_error_as_unexpected_red(tmp_path):
     tests = tmp_path / "tests"
     tests.mkdir()

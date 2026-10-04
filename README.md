@@ -88,7 +88,7 @@ tests/
 
 ## Status
 
-CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. If the plan is empty, an explicit review must cite existing tests, which the harness runs before reporting an unchanged task as verified. The CLI refuses dirty repositories, emits a JSON run result, and writes a reviewable artifact bundle. A complete real-model end-to-end run remains outstanding.
+CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. If the plan is empty, an explicit review must cite existing tests, which the harness runs before reporting an unchanged task as verified. The CLI refuses dirty repositories, emits a JSON run result, and writes a reviewable artifact bundle. An opt-in real-model acceptance test exercises the full TDD workflow and artifact bundle against the local llama.cpp server.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
@@ -109,7 +109,7 @@ uv run codemill \\
   --constraint "Use the standard library"
 ```
 
-Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. It also writes a run artifact bundle to the required output directory, which must be outside the target repository.
+Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. It also writes a run artifact bundle to the required output directory, which must be outside the target repository. Run the opt-in real-model acceptance test with `CODEMILL_RUN_LIVE_ACCEPTANCE=1 uv run pytest tests/test_live_acceptance.py` while the local server is available.
 
 Add dependencies with `uv add <package>` and development dependencies with `uv add --dev <package>`. Commit `uv.lock` so development and CI resolve the same dependency set.
 

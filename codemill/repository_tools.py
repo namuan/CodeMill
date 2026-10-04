@@ -52,12 +52,19 @@ class LocalRepositoryTools:
         if self._active_test_patch is not None:
             raise RuntimeError("a test patch is already awaiting RED verification")
         self._ensure_clean_git_repository()
+        patch = self._normalize_hunk_counts(patch)
         paths = self._parse_patch_paths(patch)
         if any(not self._is_test_path(path) for path in paths):
             raise ValueError("test patch may only modify test files")
+        existing_tests = tuple(path for path in paths if (self.root / path).exists())
+        if existing_tests:
+            raise ProtectedTestMutationError(
+                "test patch may not modify pre-existing test files: "
+                + ", ".join(existing_tests)
+            )
         if self._test_paths.intersection(paths):
             raise ProtectedTestMutationError("test patch may not modify an already protected test")
-        self._validate_scope(patch, scope, checkpoint)
+        self._validate_scope(patch, scope, checkpoint, allow_unplanned_test_paths=True)
         self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
         self._active_test_patch = (patch, paths)
@@ -98,10 +105,11 @@ class LocalRepositoryTools:
             raise PermissionError("protected test set does not match the active run")
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
             raise ProtectedTestMutationError("protected test fingerprint changed before patching")
+        patch = self._normalize_hunk_counts(patch)
         paths = self._parse_patch_paths(patch)
         if any(self._is_test_path(path) for path in paths):
             raise ProtectedTestMutationError("production patch may not modify test files")
-        self._validate_scope(patch, scope, checkpoint)
+        self._validate_scope(patch, scope, checkpoint, allow_unplanned_test_paths=True)
         self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
@@ -567,6 +575,7 @@ class LocalRepositoryTools:
         patch: str,
         scope: ExpectedScope | None,
         checkpoint: int | None,
+        allow_unplanned_test_paths: bool = False,
     ) -> None:
         if scope is None:
             return
@@ -594,12 +603,22 @@ class LocalRepositoryTools:
         }
         for candidate in candidate_patches:
             paths = self._parse_patch_paths(candidate)
-            changed_paths.update(paths)
-            changed_lines += self._changed_line_count(candidate)
+            budget_paths = tuple(
+                path
+                for path in paths
+                if not (
+                    allow_unplanned_test_paths
+                    and scope.planned_paths
+                    and self._is_test_path(path)
+                )
+            )
+            changed_paths.update(budget_paths)
+            if budget_paths:
+                changed_lines += self._changed_line_count(candidate)
             for path in paths:
                 if scope.planned_paths and not any(
                     fnmatch.fnmatchcase(path, pattern) for pattern in scope.planned_paths
-                ):
+                ) and not (allow_unplanned_test_paths and self._is_test_path(path)):
                     raise ScopeViolationError(f"patch path is outside planned scope: {path}")
                 lowered = path.casefold()
                 filename = Path(path).name.casefold()
@@ -642,6 +661,39 @@ class LocalRepositoryTools:
             raise ScopeViolationError(
                 f"patch exceeds changed-line budget: {changed_lines} > {scope.max_changed_lines}"
             )
+
+    @staticmethod
+    def _normalize_hunk_counts(patch: str) -> str:
+        if patch and not patch.endswith(("\n", "\r")):
+            patch += "\n"
+        lines = patch.splitlines(keepends=True)
+        normalized = []
+        index = 0
+        header_pattern = re.compile(
+            r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*?)(\r?\n)?$"
+        )
+        while index < len(lines):
+            match = header_pattern.match(lines[index])
+            if match is None:
+                normalized.append(lines[index])
+                index += 1
+                continue
+            old_start = int(match.group(1))
+            new_start = int(match.group(3))
+            suffix = match.group(5)
+            newline = match.group(6) or ""
+            body = []
+            index += 1
+            while index < len(lines) and not lines[index].startswith(("@@ ", "diff --git ")):
+                body.append(lines[index])
+                index += 1
+            old_count = sum(line.startswith((" ", "-")) for line in body)
+            new_count = sum(line.startswith((" ", "+")) for line in body)
+            normalized.append(
+                f"@@ -{old_start},{old_count} +{new_start},{new_count} @@{suffix}{newline}"
+            )
+            normalized.extend(body)
+        return "".join(normalized)
 
     @staticmethod
     def _changed_line_count(patch: str) -> int:

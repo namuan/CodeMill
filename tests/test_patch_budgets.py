@@ -183,6 +183,57 @@ index 0000000..0000000 100644
     assert not (tmp_path / "tests" / "test_second.py").exists()
 
 
+def test_focused_test_path_can_differ_from_planned_production_paths(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    scope = ExpectedScope(planned_paths=("src/**",))
+    test_patch = """diff --git a/test_scope.py b/test_scope.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/test_scope.py
+@@ -0,0 +1 @@
++def test_scope(): pass
+"""
+
+    target = tools.apply_test_patch(test_patch, scope, tools.patch_checkpoint())
+
+    assert target.paths == ("test_scope.py",)
+
+
+def test_production_scope_ignores_prior_accepted_test_patch_paths(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    checkpoint = tools.patch_checkpoint()
+    scope = ExpectedScope(
+        max_files=1,
+        max_changed_lines=2,
+        planned_paths=("src/**",),
+    )
+    test_patch = """diff --git a/test_scope.py b/test_scope.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/test_scope.py
+@@ -0,0 +1 @@
++def test_scope(): pass
+"""
+    tools.apply_test_patch(test_patch, scope, checkpoint)
+    protected = tools.freeze_tests()
+    production_patch = """diff --git a/src/module.py b/src/module.py
+index 0000000..0000000 100644
+--- a/src/module.py
++++ b/src/module.py
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+
+    tools.apply_production_patch(production_patch, protected, scope, checkpoint)
+
+    assert (tmp_path / "src" / "module.py").read_text() == "value = 2\n"
+
+
 def test_rejects_patch_outside_planned_paths(tmp_path):
     initialize_repository(tmp_path)
     tools = LocalRepositoryTools(tmp_path)

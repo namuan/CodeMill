@@ -160,12 +160,12 @@ class PytestVerifier:
         has_failed_test = re.search(r"(?m)^FAILED\s+.+::", output) is not None
         if target is None or not has_failed_test:
             return False
-        frames = re.findall(r"(?m)^(.+\.py):\d+: in .+$", output)
+        frames = re.findall(r"(?m)^(.+\.py):\d+:(?: in .+| .*)?$", output)
         last_frame = Path(frames[-1]).as_posix() if frames else ""
         test_assertion = any(
             last_frame.endswith(Path(path).as_posix())
             for path in target.paths
-        ) and re.search(r"(?m)^E\s+assert\b", output) is not None
+        ) and re.search(r"(?m)^E\s+(?:assert\b|AssertionError\b)", output) is not None
         did_not_raise = "DID NOT RAISE" in output and any(
             path in output for path in target.paths
         )
