@@ -348,12 +348,23 @@ class CodingHarness:
                         self._event(run_id, "implementation_patch_rejected", task.id, diagnostics)
                     )
                     events.append(self._event(run_id, "repair_started", task.id, diagnostics))
-                    patch = self.model.repair_patch(
-                        task,
-                        diagnostics,
-                        self.tools,
-                        test_target,
-                    )
+                    revise_patch = getattr(self.model, "revise_patch_application", None)
+                    if callable(revise_patch):
+                        patch = revise_patch(
+                            task,
+                            plan,
+                            diagnostics,
+                            self.tools,
+                            test_target,
+                            patch,
+                        )
+                    else:
+                        patch = self.model.repair_patch(
+                            task,
+                            diagnostics,
+                            self.tools,
+                            test_target,
+                        )
                     patch_repair_attempts += 1
                     continue
                 events.append(

@@ -268,7 +268,17 @@ def test_repairs_production_patch_that_fails_git_apply_check():
                 raise RuntimeError("error: patch failed: src/feature.py:1\nerror: patch does not apply")
             return super().apply_production_patch(patch, protected_tests, *scope_args)
 
+    class ApplyRetryModel(FakeModel):
+        def __init__(self):
+            super().__init__()
+            self.patch_revision = None
+
+        def revise_patch_application(self, task, plan, diagnostics, tools, test_target, rejected_patch):
+            self.patch_revision = (plan, diagnostics, rejected_patch)
+            return f"corrected patch {task.id}"
+
     tools = ApplyRetryTools()
+    model = ApplyRetryModel()
     verifier = SequenceVerifier(
         [
             VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
@@ -278,9 +288,15 @@ def test_repairs_production_patch_that_fails_git_apply_check():
         ]
     )
 
-    result = CodingHarness(FakeModel(), tools, verifier).run(Task("fix bug"))
+    result = CodingHarness(model, tools, verifier).run(Task("fix bug"))
 
     assert result.status is RunStatus.VERIFIED
+    assert model.patch_revision == (
+        "plan ST-001",
+        ("error: patch failed: src/feature.py:1\nerror: patch does not apply",),
+        "patch ST-001",
+    )
+    assert tools.patches[-1] == "implementation:corrected patch ST-001"
     assert tools.production_calls == 2
     assert "implementation_patch_rejected" in [event.name for event in result.events]
     assert "repair_started" in [event.name for event in result.events]

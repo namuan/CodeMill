@@ -80,6 +80,15 @@ class ModelDriver(Protocol):
         tools: CodingTools,
         test_target: VerificationTarget,
     ) -> str: ...
+    def revise_patch_application(
+        self,
+        task: SubTask,
+        plan: str,
+        diagnostics: tuple[str, ...],
+        tools: CodingTools,
+        test_target: VerificationTarget,
+        rejected_patch: str,
+    ) -> str: ...
     def repair_patch(
         self,
         task: SubTask,

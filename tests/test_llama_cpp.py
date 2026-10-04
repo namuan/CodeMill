@@ -257,6 +257,31 @@ def test_test_patch_uses_test_stage_context_and_returns_patch(repository):
         server.close()
 
 
+def test_revises_production_patch_with_apply_diagnostics_and_rejected_diff(repository):
+    server = ResponseServer([response({"patch": "diff --git a/src/greeting.py b/src/greeting.py"})])
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        patch = driver.revise_patch_application(
+            SubTask("ST-001", "preserve greeting"),
+            "plan",
+            ("error: patch does not apply",),
+            repository,
+            VerificationTarget(("tests/test_greeting.py",)),
+            "rejected diff",
+        )
+
+        assert patch.startswith("diff --git")
+        request = server.requests[0][1]
+        payload = json.loads(request["messages"][1]["content"])
+        assert request["response_format"]["json_schema"]["name"] == "revise_patch_application"
+        assert payload["rejected_patch"] == "rejected diff"
+        assert "patch_application_diagnostics" in payload["context"]
+        assert "exact existing lines" in payload["instructions"]
+    finally:
+        server.close()
+
+
 def test_revises_rejected_test_patch_with_existing_file_diagnostic(repository):
     server = ResponseServer([response({"patch": "diff --git a/tests/test_new.py b/tests/test_new.py"})])
     try:

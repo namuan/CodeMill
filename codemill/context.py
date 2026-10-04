@@ -259,18 +259,23 @@ class ContextBuilder:
         accepted_test: VerificationTarget,
         red_diagnostics: tuple[str, ...],
         char_budget: int = 12_000,
+        diagnostic_kind: str = "red",
     ) -> ContextPack:
-        fragments = [
-            self._subtask_fragment(subtask),
-            ContextFragment(
-                "red_diagnostics",
-                "\n".join(red_diagnostics),
-                "The accepted RED result is the strongest retrieval signal for implementation.",
-                "red_verifier",
-                95,
-                required=True,
+        if diagnostic_kind not in {"red", "patch_application"}:
+            raise ValueError("unsupported implementation diagnostic kind")
+        diagnostic_fragment = ContextFragment(
+            "patch_application_diagnostics" if diagnostic_kind == "patch_application" else "red_diagnostics",
+            "\n".join(red_diagnostics),
+            (
+                "The prior diff was rejected before application; correct its hunk context against the current source."
+                if diagnostic_kind == "patch_application"
+                else "The accepted RED result is the strongest retrieval signal for implementation."
             ),
-        ]
+            "git_apply" if diagnostic_kind == "patch_application" else "red_verifier",
+            95,
+            required=True,
+        )
+        fragments = [self._subtask_fragment(subtask), diagnostic_fragment]
         test_sources = []
         for path in accepted_test.paths:
             text = self.tools.read_file(path)

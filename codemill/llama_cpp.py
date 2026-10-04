@@ -421,6 +421,41 @@ class LlamaCppModelDriver:
         )
         return json.dumps(result)
 
+    def revise_patch_application(
+        self,
+        task: SubTask,
+        plan: str,
+        diagnostics: tuple[str, ...],
+        tools: CodingTools,
+        test_target: VerificationTarget,
+        rejected_patch: str,
+    ) -> str:
+        context = ContextBuilder(tools).build_implementation_context(
+            task,
+            test_target,
+            diagnostics,
+            diagnostic_kind="patch_application",
+        )
+        result = self._complete(
+            "revise_patch_application",
+            {
+                "subtask": asdict(task),
+                "plan": plan,
+                "diagnostics": diagnostics,
+                "rejected_patch": rejected_patch,
+                "context": context.render(),
+                "instructions": (
+                    "The rejected production diff was not applied. Return a corrected minimal "
+                    "unified diff that applies exactly to the supplied current source context and "
+                    "satisfies the immutable failing test. Preserve the accepted test, use exact "
+                    "existing lines as hunk context, and avoid trailing whitespace. Do not repeat "
+                    "the rejected hunk or rewrite unrelated code. Return no explanation."
+                ),
+            },
+            PATCH_SCHEMA,
+        )
+        return result["patch"]
+
     def repair_patch(
         self,
         task: SubTask,
