@@ -43,6 +43,10 @@ The v0 implementation covers the usable core of Phases 1–4, 6–7, plus minimu
 
 The first end-to-end acceptance test uses a fixture repository and a real llama.cpp server/model: submit a bounded task, run the complete workflow, and inspect the artifacts and resulting repository state. Fake adapters remain the default for deterministic unit tests; the real integration test may be opt-in when a local server/model is unavailable in CI.
 
+## Language and platform expansion
+
+The initial concrete verifier targets Python/pytest, and structural retrieval currently defaults to Python. Keep the harness contracts language- and platform-neutral where practical, and add language/runtime and operating-system adapters after the first end-to-end prototype works. Expansion should cover repository mapping, targeted test selection, regression commands, patch/path handling, process execution, and CI fixtures across supported languages and platforms rather than relying on one global test command.
+
 ## Phase 0 — Decomposition-aware bootstrap
 
 Define task, sub-task, dependency, result, model, tool, and verifier contracts. Implement decomposition, dependency validation and deterministic scheduling, bounded repair, structured run events, and final whole-task verification.
