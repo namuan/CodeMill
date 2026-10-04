@@ -34,6 +34,24 @@ def test_classifies_assertion_with_compact_pytest_trace_as_expected_red():
     )
 
 
+def test_rejects_assertion_red_when_another_test_has_an_attribute_error():
+    output = (
+        "FAILED tests/test_feature.py::test_missing_method - AttributeError\n"
+        "FAILED tests/test_feature.py::test_behavior - AssertionError\n"
+        "tests/test_feature.py:3: in test_missing_method\n"
+        "    subject.new_method()\n"
+        "E   AttributeError: method is missing\n"
+        "tests/test_feature.py:8: in test_behavior\n"
+        "    assert actual == expected\n"
+        "E   AssertionError: assert 1 == 2"
+    )
+
+    assert not PytestVerifier._is_assertion_failure(
+        output,
+        VerificationTarget(("tests/test_feature.py",)),
+    )
+
+
 def test_classifies_assertion_error_summary_as_expected_red():
     output = (
         "FAILED test_feature.py::test_feature - AssertionError\n"

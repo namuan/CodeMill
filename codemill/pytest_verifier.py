@@ -170,4 +170,13 @@ class PytestVerifier:
             path in output for path in target.paths
         )
         has_collection_error = re.search(r"(?m)^ERROR\s+collecting", output) is not None
-        return (test_assertion or did_not_raise) and not has_collection_error
+        error_types = re.findall(
+            r"(?m)^E\s+([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception)):",
+            output,
+        )
+        has_non_assertion_error = any(error_type != "AssertionError" for error_type in error_types)
+        return (
+            (test_assertion or did_not_raise)
+            and not has_collection_error
+            and not has_non_assertion_error
+        )
