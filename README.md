@@ -111,6 +111,8 @@ uv run codemill \\
 
 Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. It also writes a run artifact bundle to the required output directory, which must be outside the target repository. Run the opt-in real-model acceptance test with `CODEMILL_RUN_LIVE_ACCEPTANCE=1 uv run pytest tests/test_live_acceptance.py` while the local server is available.
 
+Run pinned historical evaluations against the local server with `uv run codemill-benchmark --dataset benchmarks/cases.jsonl --repository-root . --report /tmp/codemill/omnicoder-9b.json --model-identifier omnicoder-9b-q8_0`. The source repository must be clean, reports must be outside benchmark repositories, and each run records task, revision, outcome, trace, and metrics. Use a distinct report and model identifier for each baseline.
+
 Add dependencies with `uv add <package>` and development dependencies with `uv add --dev <package>`. Commit `uv.lock` so development and CI resolve the same dependency set.
 
 ## License

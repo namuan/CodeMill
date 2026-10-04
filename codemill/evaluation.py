@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .benchmark import BenchmarkCase, BenchmarkDatasetError, verify_benchmark_checkout
-from .models import InferenceMetrics, RunResult, RunStatus, Task
+from .models import GitStatus, InferenceMetrics, RunResult, RunStatus, Task
 
 
 class BenchmarkRunnerError(RuntimeError):
@@ -31,6 +31,9 @@ class BenchmarkRun:
     metrics: RunMetrics
     reference_revision: str | None = None
     task: Task | None = None
+    initial_git_status: GitStatus | None = None
+    final_git_status: GitStatus | None = None
+    final_diff: str = ""
 
 
 class BenchmarkRunner:
@@ -72,6 +75,9 @@ class BenchmarkRunner:
                 tools_root = getattr(getattr(harness, "tools", None), "root", None)
                 if tools_root is None or Path(tools_root).resolve() != worktree.resolve():
                     raise BenchmarkRunnerError("harness must target the disposable worktree")
+                initial_git_status = harness.tools.git_status()
+                if not initial_git_status.clean:
+                    raise BenchmarkRunnerError("disposable worktree must start clean")
                 model = getattr(harness, "model", None)
                 calls = getattr(model, "calls", ())
                 calls_before = len(calls)
@@ -80,6 +86,8 @@ class BenchmarkRunner:
                     raise BenchmarkRunnerError("harness must return a RunResult")
                 model_calls = tuple(getattr(model, "calls", ())[calls_before:])
                 metrics = RunMetrics.from_result(result, model_calls)
+                final_git_status = harness.tools.git_status()
+                final_diff = harness.tools.git_diff()
                 return BenchmarkRun(
                     case.id,
                     case.base_revision,
@@ -87,6 +95,9 @@ class BenchmarkRunner:
                     metrics,
                     case.reference_revision,
                     case.task,
+                    initial_git_status,
+                    final_git_status,
+                    final_diff,
                 )
             finally:
                 removal = self._git_result(
@@ -254,6 +265,13 @@ def write_evaluation_report(
                 "base_revision": run.base_revision,
                 "reference_revision": run.reference_revision,
                 "task": asdict(run.task) if run.task is not None else None,
+                "initial_git_status": (
+                    asdict(run.initial_git_status) if run.initial_git_status is not None else None
+                ),
+                "final_git_status": (
+                    asdict(run.final_git_status) if run.final_git_status is not None else None
+                ),
+                "final_diff": run.final_diff,
                 "metrics": asdict(run.metrics),
                 "result": asdict(run.result),
             }

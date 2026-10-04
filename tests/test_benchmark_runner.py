@@ -81,6 +81,9 @@ def test_runner_uses_and_removes_a_disposable_worktree(tmp_path):
     assert benchmark_run.metrics.verified_subtasks == 0
     assert benchmark_run.metrics.total_tokens == 12
     assert benchmark_run.metrics.inference_seconds == 0.5
+    assert benchmark_run.initial_git_status.clean
+    assert benchmark_run.final_git_status.changed_paths == ("sample.py",)
+    assert "+value = 2" in benchmark_run.final_diff
     assert observed_worktrees[0] != repository
     assert not observed_worktrees[0].exists()
     assert (repository / "sample.py").read_text() == "value = 1\n"

@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 codemill = "codemill.cli:main"
+codemill-benchmark = "codemill.benchmark_cli:main"
 
 [dependency-groups]
 dev = [
