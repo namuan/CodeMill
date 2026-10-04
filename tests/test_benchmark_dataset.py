@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from codemill.benchmark import BenchmarkDatasetError, load_benchmark_cases
+from codemill.models import ExpectedScope
 
 
 def create_repository(path):
@@ -102,6 +103,29 @@ def test_loads_repository_relative_to_explicit_dataset_root(tmp_path):
     cases = load_benchmark_cases(dataset, repository_root=tmp_path)
 
     assert cases[0].repository == (tmp_path / "fixture").resolve()
+
+
+def test_loads_case_specific_change_budgets(tmp_path):
+    revision = create_repository(tmp_path / "fixture")
+    record = case_record("scoped", "fixture", revision)
+    record["task"]["expected_scope"] = {"max_files": 5, "max_changed_lines": 180}
+    dataset = tmp_path / "cases.jsonl"
+    write_case_file(dataset, [record])
+
+    case = load_benchmark_cases(dataset)[0]
+
+    assert case.task.expected_scope == ExpectedScope(max_files=5, max_changed_lines=180)
+
+
+def test_rejects_invalid_case_specific_scope_budget(tmp_path):
+    revision = create_repository(tmp_path / "fixture")
+    record = case_record("bad-scope", "fixture", revision)
+    record["task"]["expected_scope"] = {"max_changed_lines": -1}
+    dataset = tmp_path / "cases.jsonl"
+    write_case_file(dataset, [record])
+
+    with pytest.raises(BenchmarkDatasetError, match="max_changed_lines must be a non-negative integer"):
+        load_benchmark_cases(dataset)
 
 
 def test_loads_repository_pinned_benchmark_case(tmp_path):

@@ -90,18 +90,75 @@ def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     task_value = record.get("task")
     if not isinstance(task_value, dict):
         raise BenchmarkDatasetError("task must be an object")
-    _reject_unknown(task_value, {"objective", "acceptance_criteria", "constraints"}, "task")
+    _reject_unknown(
+        task_value,
+        {"objective", "acceptance_criteria", "constraints", "expected_scope"},
+        "task",
+    )
     objective = _nonempty_string(task_value.get("objective"), "task objective")
     criteria = _string_array(task_value.get("acceptance_criteria"), "acceptance_criteria")
     if not criteria:
         raise BenchmarkDatasetError("acceptance_criteria must not be empty")
     constraints = _string_array(task_value.get("constraints", []), "constraints")
+    expected_scope = _parse_expected_scope(task_value.get("expected_scope"))
     return BenchmarkCase(
         identifier,
         repository,
         revision,
-        Task(objective, criteria, constraints, ExpectedScope()),
+        Task(objective, criteria, constraints, expected_scope),
         reference_revision,
+    )
+
+
+def _parse_expected_scope(value: Any) -> ExpectedScope:
+    if value is None:
+        return ExpectedScope()
+    if not isinstance(value, dict):
+        raise BenchmarkDatasetError("expected_scope must be an object")
+    fields = {
+        "max_files",
+        "max_changed_lines",
+        "allow_dependencies",
+        "allow_public_api",
+        "allow_schema_changes",
+        "planned_paths",
+    }
+    _reject_unknown(value, fields, "expected_scope")
+    defaults = ExpectedScope()
+    max_files = value.get("max_files", defaults.max_files)
+    max_changed_lines = value.get("max_changed_lines", defaults.max_changed_lines)
+    if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files < 1:
+        raise BenchmarkDatasetError("expected_scope.max_files must be a positive integer")
+    if (
+        isinstance(max_changed_lines, bool)
+        or not isinstance(max_changed_lines, int)
+        or max_changed_lines < 0
+    ):
+        raise BenchmarkDatasetError(
+            "expected_scope.max_changed_lines must be a non-negative integer"
+        )
+    permissions = {}
+    for field in ("allow_dependencies", "allow_public_api", "allow_schema_changes"):
+        permission = value.get(field, getattr(defaults, field))
+        if not isinstance(permission, bool):
+            raise BenchmarkDatasetError(f"expected_scope.{field} must be a boolean")
+        permissions[field] = permission
+    planned_paths = _string_array(value.get("planned_paths", []), "expected_scope.planned_paths")
+    for pattern in planned_paths:
+        if (
+            pattern.startswith("/")
+            or "\\" in pattern
+            or ".." in pattern.split("/")
+            or not re.fullmatch(r"[A-Za-z0-9._/*?-]+", pattern)
+        ):
+            raise BenchmarkDatasetError("expected_scope.planned_paths contains an invalid pattern")
+    return ExpectedScope(
+        max_files,
+        max_changed_lines,
+        permissions["allow_dependencies"],
+        permissions["allow_public_api"],
+        permissions["allow_schema_changes"],
+        planned_paths,
     )
 
 
