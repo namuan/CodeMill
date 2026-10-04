@@ -21,6 +21,7 @@ class BenchmarkRun:
     base_revision: str
     result: RunResult
     metrics: RunMetrics
+    reference_revision: str | None = None
 
 
 class BenchmarkRunner:
@@ -70,7 +71,13 @@ class BenchmarkRunner:
                     raise BenchmarkRunnerError("harness must return a RunResult")
                 model_calls = tuple(getattr(model, "calls", ())[calls_before:])
                 metrics = RunMetrics.from_result(result, model_calls)
-                return BenchmarkRun(case.id, case.base_revision, result, metrics)
+                return BenchmarkRun(
+                    case.id,
+                    case.base_revision,
+                    result,
+                    metrics,
+                    case.reference_revision,
+                )
             finally:
                 removal = self._git_result(
                     case.repository,

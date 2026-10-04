@@ -19,6 +19,7 @@ class BenchmarkCase:
     repository: Path
     base_revision: str
     task: Task
+    reference_revision: str | None = None
 
 
 def load_benchmark_cases(
@@ -57,7 +58,11 @@ def load_benchmark_cases(
 def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     if not isinstance(record, dict):
         raise BenchmarkDatasetError(f"benchmark case on line {line_number} must be an object")
-    _reject_unknown(record, {"id", "repository", "base_revision", "task"}, "benchmark case")
+    _reject_unknown(
+        record,
+        {"id", "repository", "base_revision", "reference_revision", "task"},
+        "benchmark case",
+    )
     identifier = _nonempty_string(record.get("id"), "case id")
     repository_value = _nonempty_string(record.get("repository"), "repository")
     relative_repository = Path(repository_value)
@@ -75,6 +80,12 @@ def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision):
         raise BenchmarkDatasetError("base_revision must be a full commit SHA")
     verify_benchmark_checkout(repository, revision)
+    reference_revision = record.get("reference_revision")
+    if reference_revision is not None:
+        reference_revision = _nonempty_string(reference_revision, "reference_revision")
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", reference_revision):
+            raise BenchmarkDatasetError("reference_revision must be a full commit SHA")
+        _verify_commit_available(repository, reference_revision, "reference_revision")
 
     task_value = record.get("task")
     if not isinstance(task_value, dict):
@@ -85,21 +96,20 @@ def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     if not criteria:
         raise BenchmarkDatasetError("acceptance_criteria must not be empty")
     constraints = _string_array(task_value.get("constraints", []), "constraints")
-    return BenchmarkCase(identifier, repository, revision, Task(objective, criteria, constraints, ExpectedScope()))
+    return BenchmarkCase(
+        identifier,
+        repository,
+        revision,
+        Task(objective, criteria, constraints, ExpectedScope()),
+        reference_revision,
+    )
 
 
 def verify_benchmark_checkout(repository: Path, revision: str) -> None:
+    _verify_commit_available(repository, revision, "base_revision")
     git_path = shutil.which("git")
     if git_path is None:
         raise BenchmarkDatasetError("git executable is required to validate benchmark repositories")
-    base = subprocess.run(
-        [git_path, "-C", str(repository), "cat-file", "-e", f"{revision}^{{commit}}"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if base.returncode != 0:
-        raise BenchmarkDatasetError("benchmark base_revision is unavailable in repository")
     status = subprocess.run(
         [git_path, "-C", str(repository), "status", "--porcelain", "--untracked-files=all"],
         check=False,
@@ -110,6 +120,20 @@ def verify_benchmark_checkout(repository: Path, revision: str) -> None:
         raise BenchmarkDatasetError("could not inspect benchmark repository status")
     if status.stdout.strip():
         raise BenchmarkDatasetError("benchmark repository must be clean")
+
+
+def _verify_commit_available(repository: Path, revision: str, field: str) -> None:
+    git_path = shutil.which("git")
+    if git_path is None:
+        raise BenchmarkDatasetError("git executable is required to validate benchmark repositories")
+    result = subprocess.run(
+        [git_path, "-C", str(repository), "cat-file", "-e", f"{revision}^{{commit}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise BenchmarkDatasetError(f"benchmark {field} is unavailable in repository")
 
 
 def _reject_unknown(value: dict[str, Any], allowed: set[str], description: str) -> None:

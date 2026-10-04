@@ -26,8 +26,8 @@ def write_case_file(path, records):
     path.write_text("\n".join(json.dumps(record) for record in records) + "\n")
 
 
-def case_record(case_id, repository, revision):
-    return {
+def case_record(case_id, repository, revision, reference_revision=None):
+    record = {
         "id": case_id,
         "repository": repository,
         "base_revision": revision,
@@ -37,6 +37,44 @@ def case_record(case_id, repository, revision):
             "constraints": ["Use the standard library"],
         },
     }
+    if reference_revision is not None:
+        record["reference_revision"] = reference_revision
+    return record
+
+
+def test_loads_reference_revision_for_patch_comparison(tmp_path):
+    repository = tmp_path / "fixture"
+    base_revision = create_repository(repository)
+    (repository / "sample.py").write_text("value = 2\n")
+    subprocess.run(["git", "-C", str(repository), "add", "sample.py"], check=True)
+    subprocess.run(["git", "-C", str(repository), "commit", "-qm", "reference"], check=True)
+    reference_revision = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    dataset = tmp_path / "cases.jsonl"
+    write_case_file(
+        dataset,
+        [case_record("with-reference", "fixture", base_revision, reference_revision)],
+    )
+
+    case = load_benchmark_cases(dataset)[0]
+
+    assert case.reference_revision == reference_revision
+
+
+def test_rejects_unavailable_reference_revision(tmp_path):
+    revision = create_repository(tmp_path / "fixture")
+    dataset = tmp_path / "cases.jsonl"
+    write_case_file(
+        dataset,
+        [case_record("missing-reference", "fixture", revision, "f" * 40)],
+    )
+
+    with pytest.raises(BenchmarkDatasetError, match="reference_revision is unavailable"):
+        load_benchmark_cases(dataset)
 
 
 def test_loads_repository_relative_to_explicit_dataset_root(tmp_path):
