@@ -129,6 +129,52 @@ class ContextBuilder:
     def __init__(self, tools: CodingTools):
         self.tools = tools
 
+    def build_locate_context(
+        self,
+        subtask: SubTask,
+        char_budget: int = 12_000,
+    ) -> ContextPack:
+        fragments = [self._subtask_fragment(subtask)]
+        summary = summarize_repository(self.tools)
+        fragments.append(
+            ContextFragment(
+                "repository_map",
+                summary.render(),
+                "Orient structural search across source and test roots.",
+                "list_tree",
+                20,
+            )
+        )
+        evidence_count = 0
+        for symbol in self._symbols(" ".join((subtask.objective, *subtask.acceptance_criteria))):
+            definitions = json.loads(self.tools.find_definitions(symbol))
+            for definition in definitions:
+                path = definition["path"]
+                line = definition["line"]
+                start = max(1, line - 6)
+                end = line + 16
+                text = self.tools.read_file(path, start, end)
+                actual_end = start + max(0, len(text.splitlines()) - 1)
+                fragments.append(
+                    ContextFragment(
+                        "candidate_definition",
+                        text,
+                        f"Structural definition matching requested symbol '{symbol}'.",
+                        "ast_grep_find_definitions",
+                        70,
+                        path,
+                        start,
+                        actual_end,
+                        (symbol,),
+                    )
+                )
+                evidence_count += 1
+                if evidence_count >= 4:
+                    break
+            if evidence_count >= 4:
+                break
+        return self._pack("locate", subtask, fragments, char_budget)
+
     def build_test_context(
         self,
         subtask: SubTask,

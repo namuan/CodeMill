@@ -201,7 +201,13 @@ class CodingHarness:
                 raise
             events.append(self._event(run_id, "tests_frozen", task.id))
             events.append(self._event(run_id, "implementation_started", task.id))
-            patch = self.model.create_patch(task, plan, self.tools)
+            patch = self.model.create_patch(
+                task,
+                plan,
+                self.tools,
+                test_target,
+                red.diagnostics,
+            )
             attempts += 1
             self.tools.apply_production_patch(patch, protected_tests)
             events.append(self._event(run_id, "patch_applied", task.id))
@@ -230,6 +236,7 @@ class CodingHarness:
                             task,
                             diff,
                             self.tools,
+                            test_target,
                         )
                         review = parse_decomposition_review(review_response)
                         if review.accepted:
@@ -307,7 +314,12 @@ class CodingHarness:
                     )
 
                 events.append(self._event(run_id, "repair_started", task.id, result.diagnostics))
-                patch = self.model.repair_patch(task, result.diagnostics, self.tools)
+                patch = self.model.repair_patch(
+                    task,
+                    result.diagnostics,
+                    self.tools,
+                    test_target,
+                )
                 attempts += 1
                 self.tools.apply_production_patch(patch, protected_tests)
                 events.append(self._event(run_id, "repair_patch_applied", task.id))

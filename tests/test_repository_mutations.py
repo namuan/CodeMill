@@ -89,7 +89,7 @@ index 0000000..0000000
 +    assert add(2, 3) == 5
 +"""
 
-        def create_patch(self, task, plan, tools):
+        def create_patch(self, task, plan, tools, test_target, red_diagnostics):
             return """diff --git a/src/example.py b/src/example.py
 index 0000000..0000000 100644
 --- a/src/example.py
@@ -100,10 +100,10 @@ index 0000000..0000000 100644
 +    return left + right
 """
 
-        def review_implementation(self, task, diff, tools):
+        def review_implementation(self, task, diff, tools, test_target):
             return '{"accepted": true, "findings": []}'
 
-        def repair_patch(self, task, diagnostics, tools):
+        def repair_patch(self, task, diagnostics, tools, test_target):
             raise AssertionError("repair should not be needed")
 
     tools = LocalRepositoryTools(tmp_path)

@@ -33,8 +33,25 @@ class ModelDriver(Protocol):
     ) -> str: ...
     def locate_and_plan(self, task: SubTask, tools: CodingTools) -> str: ...
     def create_test_patch(self, task: SubTask, plan: str, tools: CodingTools) -> str: ...
-    def create_patch(self, task: SubTask, plan: str, tools: CodingTools) -> str: ...
-    def review_implementation(
-        self, task: SubTask, diff: str, tools: CodingTools
+    def create_patch(
+        self,
+        task: SubTask,
+        plan: str,
+        tools: CodingTools,
+        test_target: VerificationTarget,
+        red_diagnostics: tuple[str, ...],
     ) -> str: ...
-    def repair_patch(self, task: SubTask, diagnostics: tuple[str, ...], tools: CodingTools) -> str: ...
+    def review_implementation(
+        self,
+        task: SubTask,
+        diff: str,
+        tools: CodingTools,
+        test_target: VerificationTarget,
+    ) -> str: ...
+    def repair_patch(
+        self,
+        task: SubTask,
+        diagnostics: tuple[str, ...],
+        tools: CodingTools,
+        test_target: VerificationTarget,
+    ) -> str: ...

@@ -603,7 +603,7 @@ llama-server
 locally loaded model
 ```
 
-The same local model initially performs DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, and REVIEW with operation-specific prompts/context. Later evaluation may justify different model/configuration choices per operation.
+The same local model initially performs DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR, and REVIEW with operation-specific prompts/context. The Python adapter sends non-streaming OpenAI-compatible chat-completion requests with strict JSON-schema output, bounded retries for transient transport/server errors, and explicit refusal/malformed-response failures. WRITE_TEST gets the test context pack; IMPLEMENT and REPAIR receive the accepted test and current failure diagnostics; review sees the protected test and diff. Later evaluation may justify different model/configuration choices per operation.
 
 ## 17. Observability and evaluation
 

@@ -82,10 +82,10 @@ class FakeModel:
 
     def locate_and_plan(self, task, tools): return f"plan {task.id}"
     def create_test_patch(self, task, plan, tools): return f"test patch {task.id}"
-    def create_patch(self, task, plan, tools): return f"patch {task.id}"
-    def review_implementation(self, task, diff, tools):
+    def create_patch(self, task, plan, tools, test_target, red_diagnostics): return f"patch {task.id}"
+    def review_implementation(self, task, diff, tools, test_target):
         return json.dumps({"accepted": True, "findings": []})
-    def repair_patch(self, task, diagnostics, tools): return f"repair {task.id}"
+    def repair_patch(self, task, diagnostics, tools, test_target): return f"repair {task.id}"
 
 
 class SequenceVerifier:
@@ -183,7 +183,7 @@ def test_freezes_red_test_before_production_patches():
 
 def test_rejects_production_patch_that_modifies_a_protected_test():
     class TestEditingModel(FakeModel):
-        def create_patch(self, task, plan, tools):
+        def create_patch(self, task, plan, tools, test_target, red_diagnostics):
             return "modify-protected-test"
 
     tools = FakeTools()
@@ -207,7 +207,7 @@ def test_repairs_minimality_review_findings_before_verifying_slice():
             super().__init__()
             self.review_calls = 0
 
-        def review_implementation(self, task, diff, tools):
+        def review_implementation(self, task, diff, tools, test_target):
             self.review_calls += 1
             if self.review_calls == 1:
                 return json.dumps(
