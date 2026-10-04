@@ -87,6 +87,16 @@ class VerificationResult:
     ok: bool
     diagnostics: tuple[str, ...] = ()
     failure_kind: VerificationFailureKind | None = None
+    command: tuple[str, ...] = ()
+    exit_code: int | None = None
+    duration_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class VerificationRecord:
+    purpose: VerificationPurpose
+    target: VerificationTarget | None
+    result: VerificationResult
 
 
 @dataclass(frozen=True)
@@ -126,6 +136,7 @@ class SubTaskResult:
     diagnostics: tuple[str, ...] = ()
     events: tuple[RunEvent, ...] = field(default_factory=tuple)
     verified_slice: VerifiedSliceRecord | None = None
+    verifications: tuple[VerificationRecord, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -136,6 +147,19 @@ class RunResult:
     diagnostics: tuple[str, ...] = ()
     events: tuple[RunEvent, ...] = field(default_factory=tuple)
     subtasks: tuple[SubTaskResult, ...] = ()
+    planned_subtasks: tuple[SubTask, ...] = ()
+    final_verification: VerificationRecord | None = None
+
+    @property
+    def verifications(self) -> tuple[VerificationRecord, ...]:
+        records = tuple(
+            record
+            for subtask in self.subtasks
+            for record in subtask.verifications
+        )
+        if self.final_verification is None:
+            return records
+        return (*records, self.final_verification)
 
     @property
     def verified_slices(self) -> tuple[VerifiedSliceRecord, ...]:

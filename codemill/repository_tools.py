@@ -2,6 +2,7 @@ import ast
 import fnmatch
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -144,7 +145,38 @@ class LocalRepositoryTools:
         return GitStatus(commit, branch, not changed_paths, changed_paths)
 
     def git_diff(self) -> str:
-        return "\n".join(patch for _, patch in self._patch_log)
+        tracked_diff = self._git_output("diff", "--no-ext-diff", "--no-color", "--")
+        untracked_result = self._git_output(
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        )
+        untracked_diffs = []
+        for path in filter(None, untracked_result.split("\0")):
+            result = subprocess.run(
+                [
+                    self.git_path,
+                    "-C",
+                    str(self.root),
+                    "diff",
+                    "--no-index",
+                    "--no-ext-diff",
+                    "--no-color",
+                    "--",
+                    os.devnull,
+                    path,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.search_timeout,
+            )
+            if result.returncode not in {0, 1}:
+                raise RuntimeError(result.stderr.strip() or "could not diff untracked file")
+            if result.stdout:
+                untracked_diffs.append(result.stdout)
+        return "".join((tracked_diff, *untracked_diffs))
 
     def patch_checkpoint(self) -> int:
         return len(self._patch_log)

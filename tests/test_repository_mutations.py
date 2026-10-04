@@ -130,6 +130,15 @@ index 0000000..0000000 100644
     )
     assert "return left + right" in tools.git_diff()
     assert result.events[-1].name == "run_verified"
+    assert tuple(record.purpose for record in result.verifications) == (
+        VerificationPurpose.RED,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
+        VerificationPurpose.FINAL,
+    )
+    assert result.verifications[0].result.exit_code != 0
+    assert all(record.result.exit_code == 0 for record in result.verifications[1:])
+    assert all(record.result.command[1:3] == ("-m", "pytest") for record in result.verifications)
 
 
 def test_applies_test_patch_and_returns_focused_verification_target(tmp_path):
@@ -330,6 +339,46 @@ new file mode 100644
         raise AssertionError("mismatched diff headers were accepted")
 
     assert not (tmp_path.parent / "outside.py").exists()
+
+
+def test_git_diff_reports_final_worktree_state_not_patch_history(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    test_patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1 @@
++def test_value(): assert True
+"""
+    tools.apply_test_patch(test_patch)
+    protected = tools.freeze_tests()
+    first_patch = """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+    second_patch = """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1 +1 @@
+-value = 2
++value = 3
+"""
+    tools.apply_production_patch(first_patch, protected)
+    tools.apply_production_patch(second_patch, protected)
+
+    diff = tools.git_diff()
+
+    assert "+++ b/tests/test_example.py" in diff
+    assert "+value = 3" in diff
+    assert "+value = 2" not in diff
+    assert diff.count("diff --git a/src/example.py") == 1
 
 
 def test_harness_records_attempt_to_mutate_protected_test(tmp_path):

@@ -1,6 +1,7 @@
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from .models import (
@@ -29,10 +30,16 @@ class PytestVerifier:
         purpose: VerificationPurpose,
         target: VerificationTarget | None = None,
     ) -> VerificationResult:
+        started = time.monotonic()
         try:
             command = self._command(purpose, target)
         except ValueError as error:
-            return VerificationResult(False, (str(error),), VerificationFailureKind.OTHER)
+            return VerificationResult(
+                False,
+                (str(error),),
+                VerificationFailureKind.OTHER,
+                duration_seconds=time.monotonic() - started,
+            )
 
         try:
             result = subprocess.run(
@@ -48,17 +55,30 @@ class PytestVerifier:
                 False,
                 (f"pytest timed out after {self.timeout:g} seconds",),
                 VerificationFailureKind.OTHER,
+                tuple(command),
+                None,
+                time.monotonic() - started,
             )
         except OSError as error:
             return VerificationResult(
                 False,
                 (f"pytest could not be started: {error}",),
                 VerificationFailureKind.OTHER,
+                tuple(command),
+                None,
+                time.monotonic() - started,
             )
 
         output = self._bounded_output(result.stdout, result.stderr)
+        duration = time.monotonic() - started
         if result.returncode == 0:
-            return VerificationResult(True, ("pytest passed",))
+            return VerificationResult(
+                True,
+                ("pytest passed",),
+                command=tuple(command),
+                exit_code=result.returncode,
+                duration_seconds=duration,
+            )
 
         diagnostics = (
             f"pytest exited with status {result.returncode}",
@@ -67,7 +87,14 @@ class PytestVerifier:
         failure_kind = VerificationFailureKind.OTHER
         if purpose is VerificationPurpose.RED and self._is_assertion_failure(output, target):
             failure_kind = VerificationFailureKind.EXPECTED_BEHAVIOR
-        return VerificationResult(False, diagnostics, failure_kind)
+        return VerificationResult(
+            False,
+            diagnostics,
+            failure_kind,
+            tuple(command),
+            result.returncode,
+            duration,
+        )
 
     def _command(
         self,

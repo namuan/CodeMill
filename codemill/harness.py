@@ -14,6 +14,7 @@ from .models import (
     Task,
     VerificationFailureKind,
     VerificationPurpose,
+    VerificationRecord,
     VerificationResult,
     VerificationTarget,
     VerifiedSliceRecord,
@@ -60,7 +61,14 @@ class CodingHarness:
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
             events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
-            return RunResult(RunStatus.FAILED, 0, run_id, diagnostics, tuple(events))
+            return RunResult(
+                RunStatus.FAILED,
+                0,
+                run_id,
+                diagnostics,
+                tuple(events),
+                planned_subtasks=tuple(subtasks),
+            )
 
         try:
             review = parse_decomposition_review(review_response)
@@ -70,7 +78,14 @@ class CodingHarness:
                 self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
             )
             events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
-            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
+            return RunResult(
+                RunStatus.ESCALATED,
+                0,
+                run_id,
+                diagnostics,
+                tuple(events),
+                planned_subtasks=tuple(subtasks),
+            )
 
         if not review.accepted:
             diagnostics = review.findings or ("decomposition quality review rejected the plan",)
@@ -78,7 +93,14 @@ class CodingHarness:
                 self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
             )
             events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
-            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
+            return RunResult(
+                RunStatus.ESCALATED,
+                0,
+                run_id,
+                diagnostics,
+                tuple(events),
+                planned_subtasks=tuple(subtasks),
+            )
 
         events.append(self._event(run_id, "decomposition_review_accepted"))
         events.append(self._event(run_id, "plan_validated"))
@@ -117,6 +139,7 @@ class CodingHarness:
                     result.diagnostics,
                     tuple(events),
                     tuple(results),
+                    tuple(subtasks),
                 )
 
         events.append(self._event(run_id, "final_verify_started"))
@@ -132,8 +155,10 @@ class CodingHarness:
                 diagnostics,
                 tuple(events),
                 tuple(results),
+                tuple(subtasks),
             )
 
+        final_record = VerificationRecord(VerificationPurpose.FINAL, None, final)
         if not final.ok:
             events.append(
                 self._event(run_id, "final_verify_failed", diagnostics=final.diagnostics)
@@ -146,6 +171,8 @@ class CodingHarness:
                 final.diagnostics,
                 tuple(events),
                 tuple(results),
+                tuple(subtasks),
+                final_record,
             )
 
         events.append(self._event(run_id, "final_verify_passed"))
@@ -157,6 +184,8 @@ class CodingHarness:
             final.diagnostics,
             tuple(events),
             tuple(results),
+            tuple(subtasks),
+            final_record,
         )
 
     def _run_subtask(
@@ -169,6 +198,7 @@ class CodingHarness:
         events: list[RunEvent] = [self._event(run_id, "subtask_started", task.id)]
         checkpoint = self.tools.patch_checkpoint()
         attempts = 0
+        verification_records: list[VerificationRecord] = []
 
         try:
             events.append(self._event(run_id, "locate_started", task.id))
@@ -191,6 +221,9 @@ class CodingHarness:
             events.append(self._event(run_id, "red_verify_started", task.id))
             try:
                 red = self.verifier.verify(VerificationPurpose.RED, test_target)
+                verification_records.append(
+                    VerificationRecord(VerificationPurpose.RED, test_target, red)
+                )
             except Exception:
                 self.tools.discard_test_patch()
                 raise
@@ -212,6 +245,7 @@ class CodingHarness:
                     attempts,
                     diagnostics,
                     tuple(events),
+                    verifications=tuple(verification_records),
                 )
 
             events.append(self._event(run_id, "red_confirmed", task.id, red.diagnostics))
@@ -243,12 +277,18 @@ class CodingHarness:
             while True:
                 events.append(self._event(run_id, "green_verify_started", task.id))
                 result = self.verifier.verify(VerificationPurpose.GREEN, test_target)
+                verification_records.append(
+                    VerificationRecord(VerificationPurpose.GREEN, test_target, result)
+                )
                 if result.ok:
                     events.append(
                         self._event(run_id, "green_verify_passed", task.id, result.diagnostics)
                     )
                     events.append(self._event(run_id, "regression_verify_started", task.id))
                     result = self.verifier.verify(VerificationPurpose.REGRESSION)
+                    verification_records.append(
+                        VerificationRecord(VerificationPurpose.REGRESSION, None, result)
+                    )
                     if result.ok:
                         events.append(
                             self._event(
@@ -292,6 +332,7 @@ class CodingHarness:
                                 result.diagnostics,
                                 tuple(events),
                                 verified_slice,
+                                tuple(verification_records),
                             )
                         result = VerificationResult(False, review.findings)
                         events.append(
@@ -339,6 +380,7 @@ class CodingHarness:
                         attempts,
                         result.diagnostics,
                         tuple(events),
+                        verifications=tuple(verification_records),
                     )
 
                 events.append(self._event(run_id, "repair_started", task.id, result.diagnostics))
@@ -370,6 +412,7 @@ class CodingHarness:
                 attempts,
                 diagnostics,
                 tuple(events),
+                verifications=tuple(verification_records),
             )
         except ScopeViolationError as error:
             diagnostics = (str(error),)
@@ -380,6 +423,7 @@ class CodingHarness:
                 attempts,
                 diagnostics,
                 tuple(events),
+                verifications=tuple(verification_records),
             )
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
@@ -392,6 +436,7 @@ class CodingHarness:
                 attempts,
                 diagnostics,
                 tuple(events),
+                verifications=tuple(verification_records),
             )
 
     @staticmethod

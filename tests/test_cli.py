@@ -14,6 +14,9 @@ def test_cli_runs_task_and_emits_starting_repository_state(monkeypatch, capsys, 
         def git_status(self):
             return GitStatus("abc123", "main", True, ())
 
+        def git_diff(self):
+            return ""
+
     class Harness:
         def __init__(self, model, tools, verifier):
             self.tools = tools
@@ -33,6 +36,8 @@ def test_cli_runs_task_and_emits_starting_repository_state(monkeypatch, capsys, 
         [
             "--repository",
             str(tmp_path),
+            "--output-directory",
+            str(tmp_path.parent / f"{tmp_path.name}-artifacts"),
             "--task",
             "Add a greeting",
             "--acceptance-criterion",
@@ -53,6 +58,7 @@ def test_cli_runs_task_and_emits_starting_repository_state(monkeypatch, capsys, 
         "Bob gets Hello, Bob!",
     ]
     assert output["result"]["status"] == RunStatus.VERIFIED.value
+    assert (Path(output["artifact_directory"]) / "run.json").exists()
 
 
 def test_cli_refuses_dirty_repository_before_creating_model(monkeypatch, capsys, tmp_path):
@@ -72,7 +78,14 @@ def test_cli_refuses_dirty_repository_before_creating_model(monkeypatch, capsys,
     monkeypatch.setattr(cli, "LlamaCppModelDriver", model_factory)
 
     exit_code = cli.main(
-        ["--repository", str(tmp_path), "--task", "Change something"]
+        [
+            "--repository",
+            str(tmp_path),
+            "--output-directory",
+            str(tmp_path.parent / f"{tmp_path.name}-artifacts"),
+            "--task",
+            "Change something",
+        ]
     )
 
     error = json.loads(capsys.readouterr().err)
@@ -91,6 +104,9 @@ def test_cli_maps_terminal_statuses_to_exit_codes(monkeypatch, capsys, tmp_path)
         def git_status(self):
             return GitStatus("abc123", "main", True, ())
 
+        def git_diff(self):
+            return ""
+
     class Harness:
         def __init__(self, model, tools, verifier):
             pass
@@ -103,7 +119,16 @@ def test_cli_maps_terminal_statuses_to_exit_codes(monkeypatch, capsys, tmp_path)
     monkeypatch.setattr(cli, "PytestVerifier", lambda root: object())
     monkeypatch.setattr(cli, "CodingHarness", Harness)
 
-    exit_code = cli.main(["--repository", str(tmp_path), "--task", "Do a task"])
+    exit_code = cli.main(
+        [
+            "--repository",
+            str(tmp_path),
+            "--output-directory",
+            str(tmp_path.parent / f"{tmp_path.name}-artifacts"),
+            "--task",
+            "Do a task",
+        ]
+    )
 
     assert exit_code == 2
     assert json.loads(capsys.readouterr().out)["result"]["status"] == "escalated"

@@ -88,7 +88,7 @@ tests/
 
 ## Status
 
-CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. The CLI refuses dirty repositories and emits a JSON run result. Persistent artifact bundles and a complete real-model end-to-end run remain outstanding.
+CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. The CLI refuses dirty repositories, emits a JSON run result, and writes a reviewable artifact bundle. A complete real-model end-to-end run remains outstanding.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
@@ -103,12 +103,13 @@ uv sync
 uv run pytest
 uv run codemill \\
   --repository /path/to/clean/repository \\
+  --output-directory /path/outside/repository/codemill-runs \\
   --task "Add a greeting helper" \\
   --acceptance-criterion "greeting('Ada') returns 'Hello, Ada!'" \\
   --constraint "Use the standard library"
 ```
 
-Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. Results are currently printed to stdout rather than persisted as an artifact bundle.
+Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. It also writes a run artifact bundle to the required output directory, which must be outside the target repository.
 
 Add dependencies with `uv add <package>` and development dependencies with `uv add --dev <package>`. Commit `uv.lock` so development and CI resolve the same dependency set.
 

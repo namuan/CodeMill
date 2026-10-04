@@ -162,6 +162,13 @@ def test_repairs_subtask_then_runs_final_verification():
         VerificationPurpose.REGRESSION,
     )
     assert result.subtasks[0].events[-1].name == "slice_compacted"
+    assert tuple(record.purpose for record in result.verifications) == (
+        VerificationPurpose.RED,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
+        VerificationPurpose.FINAL,
+    )
 
 
 def test_freezes_red_test_before_production_patches():

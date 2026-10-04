@@ -68,6 +68,9 @@ def test_passes_focused_green_and_final_verification(tmp_path):
 
     assert focused.ok
     assert final.ok
+    assert focused.command[1:3] == ("-m", "pytest")
+    assert focused.exit_code == 0
+    assert focused.duration_seconds >= 0
 
 
 def test_requires_target_for_focused_verification(tmp_path):
