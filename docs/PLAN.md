@@ -163,7 +163,7 @@ Reject or escalate when the implementation changes the protected test, exceeds s
 
 ## Phase 8 — Evaluation
 
-Build tasks from historical commits and evaluate the full decomposition-to-TDD workflow. The first dataset loader accepts JSONL cases pinned to a full repository commit SHA, validates task acceptance criteria, rejects duplicate IDs/path escapes, and refuses dirty or mismatched repository checkouts; curated historical cases and an isolated-worktree runner remain outstanding.
+Build tasks from historical commits and evaluate the full decomposition-to-TDD workflow. The dataset loader accepts JSONL cases pinned to a full repository commit SHA, validates task acceptance criteria, rejects duplicate IDs/path escapes, and refuses dirty or mismatched repository checkouts. `BenchmarkRunner` rechecks the base, creates a detached disposable Git worktree, verifies the harness targets that worktree, records run metrics, and removes the worktree after each case. Curated historical cases and broader token/latency/cost/retrieval metrics remain outstanding.
 
 Track task success plus: slice count/depth, RED validity, tests that unexpectedly pass, GREEN attempts, test-mutation attempts, implementation LOC/files, unnecessary-code findings, regression failures, tokens/tool calls, latency/GPU time, escalation, and human intervention. The initial metrics module derives run/sub-task outcomes, valid/rejected RED, repair counts, scope violations, and verified changed files from harness events and records; inference cost, timing, test-mutation attempts, and benchmark datasets remain outstanding.
 

@@ -67,7 +67,7 @@ def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     revision = _nonempty_string(record.get("base_revision"), "base_revision")
     if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision):
         raise BenchmarkDatasetError("base_revision must be a full commit SHA")
-    _verify_checkout(repository, revision)
+    verify_benchmark_checkout(repository, revision)
 
     task_value = record.get("task")
     if not isinstance(task_value, dict):
@@ -81,7 +81,7 @@ def _parse_case(record: Any, root: Path, line_number: int) -> BenchmarkCase:
     return BenchmarkCase(identifier, repository, revision, Task(objective, criteria, constraints, ExpectedScope()))
 
 
-def _verify_checkout(repository: Path, revision: str) -> None:
+def verify_benchmark_checkout(repository: Path, revision: str) -> None:
     git_path = shutil.which("git")
     if git_path is None:
         raise BenchmarkDatasetError("git executable is required to validate benchmark repositories")
