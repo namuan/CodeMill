@@ -1,8 +1,10 @@
 import json
+import re
 import socket
 import time
 from dataclasses import asdict
 from http.client import HTTPException
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -234,13 +236,16 @@ class LlamaCppModelDriver:
                 "subtask": asdict(task),
                 "plan": plan,
                 "context": context.render(),
+                "api_guidance": self._test_api_guidance(task, tools),
                 "instructions": (
                     "Write one minimal, complete Python test module for the behavior. Return only "
                     "Python source in the JSON code field; the harness chooses a new filename and "
                     "creates the file. Context test snippets are read-only examples, not edit "
                     "targets. Never modify or reproduce an existing test module. Use only existing "
                     "interfaces shown in the context or explicitly named in the task; do not invent "
-                    "functions, classes, or public APIs. Test observable behavior, not implementation "
+                    "functions, classes, or public APIs. For a requested Class.method API, import "
+                    "the class and call the method on an instance; never import the method as a "
+                    "module-level function. Test observable behavior, not implementation "
                     "details, unless the task explicitly targets a private helper. RED is valid only "
                     "when an assertion fails or an explicitly requested absent method raises its "
                     "matching AttributeError; import, collection, and setup failures are invalid, as "
@@ -272,6 +277,7 @@ class LlamaCppModelDriver:
                 "context": context.render(),
                 "rejected_module": rejected_module,
                 "diagnostics": diagnostics,
+                "api_guidance": self._test_api_guidance(task, tools),
                 "instructions": (
                     "Revise the focused test module to fix the reported syntax, import, collection, "
                     "or RED-behavior problem. Return a complete replacement Python module in the "
@@ -289,6 +295,32 @@ class LlamaCppModelDriver:
             TEST_MODULE_SCHEMA,
         )
         return result["code"]
+
+    @staticmethod
+    def _test_api_guidance(task: SubTask, tools: CodingTools) -> str:
+        task_text = " ".join((task.objective, *task.acceptance_criteria))
+        requested = re.search(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text)
+        if requested is None:
+            return ""
+        class_name, method_name = requested.groups()
+        definitions = json.loads(tools.find_definitions(class_name))
+        definition = next(
+            (item for item in definitions if item.get("kind") == "class"),
+            None,
+        )
+        if definition is None:
+            return (
+                f"The task targets the instance method {class_name}.{method_name}; import the "
+                "class, not the method as a module-level function."
+            )
+        module = PurePosixPath(definition["path"]).with_suffix("").as_posix().replace("/", ".")
+        if module.endswith(".__init__"):
+            module = module[: -len(".__init__")]
+        return (
+            f"The task targets the instance method {class_name}.{method_name}. Import "
+            f"{class_name} from {module}, instantiate it, and call .{method_name}() on the "
+            "instance. Do not import the method as a module-level function."
+        )
 
     def create_test_patch(self, task: SubTask, plan: str, tools: CodingTools) -> str:
         context = ContextBuilder(tools).build_test_context(task)

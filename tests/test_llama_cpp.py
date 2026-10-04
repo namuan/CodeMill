@@ -222,6 +222,17 @@ def test_test_module_revision_receives_invalid_red_diagnostics(repository):
         server.close()
 
 
+def test_test_api_guidance_distinguishes_instance_method_from_module_function():
+    guidance = LlamaCppModelDriver._test_api_guidance(
+        SubTask("ST-001", "Implement LocalRepositoryTools.git_status()"),
+        repository_tools(),
+    )
+
+    assert "Import LocalRepositoryTools from codemill.repository_tools" in guidance
+    assert "call .git_status() on the instance" in guidance
+    assert "Do not import the method as a module-level function" in guidance
+
+
 def test_test_patch_uses_test_stage_context_and_returns_patch(repository):
     server = ResponseServer([response({"patch": "diff --git a/tests/test_greeting.py b/tests/test_greeting.py"})])
     try:
