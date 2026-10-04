@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from .models import SubTask, VerificationTarget
+from .test_generation import requested_class_methods
 from .tools import CodingTools
 
 
@@ -336,13 +337,8 @@ class ContextBuilder:
         return self._pack("implementation", subtask, fragments, char_budget)
 
     def _missing_method_context(self, subtask: SubTask) -> list[ContextFragment]:
-        task_text = " ".join((subtask.objective, *subtask.acceptance_criteria))
-        requested_methods = re.findall(
-            r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)",
-            task_text,
-        )
         fragments = []
-        for class_name, method_name in requested_methods:
+        for class_name, method_name in requested_class_methods(subtask, self.tools):
             class_definitions = json.loads(self.tools.find_definitions(class_name))
             for definition in class_definitions:
                 if definition.get("kind") != "class":

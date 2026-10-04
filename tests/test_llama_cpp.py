@@ -224,7 +224,7 @@ def test_test_module_revision_receives_invalid_red_diagnostics(repository):
 
 def test_test_api_guidance_distinguishes_instance_method_from_module_function():
     guidance = LlamaCppModelDriver._test_api_guidance(
-        SubTask("ST-001", "Implement LocalRepositoryTools.git_status()"),
+        SubTask("ST-001", "Implement git_status() in codemill/repository_tools.py"),
         repository_tools(),
     )
 

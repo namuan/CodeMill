@@ -38,6 +38,26 @@ def test_replaces_nonliteral_messages_on_requested_api_guards():
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 
 
+def test_resolves_class_from_explicit_source_path(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tools.py").write_text(
+        "class LocalRepositoryTools:\n    def search_text(self, query):\n        return query\n"
+    )
+    tools = LocalRepositoryTools(tmp_path)
+    task = SubTask("ST-001", "Implement git_status() in src/tools.py")
+    source = (
+        "from src.tools import LocalRepositoryTools\n\n"
+        "def test_status(tmp_path):\n"
+        "    tools = LocalRepositoryTools()\n"
+        "    tools.git_status()\n"
+    )
+
+    prepared, guarded_symbols = prepare_test_module(source, task, tools)
+
+    assert "assert callable(getattr(tools, 'git_status', None))" in prepared
+    assert guarded_symbols == ("LocalRepositoryTools.git_status",)
+
+
 def test_does_not_inject_guards_for_unmentioned_methods():
     task = SubTask("ST-001", "Implement LocalRepositoryTools.git_status()")
     source = "def test_status():\n    assert True\n"

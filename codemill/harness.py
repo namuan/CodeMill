@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -21,7 +20,11 @@ from .models import (
     VerifiedSliceRecord,
 )
 from .subtask_graph import order_subtasks
-from .test_generation import build_test_file_patch, prepare_test_module
+from .test_generation import (
+    build_test_file_patch,
+    prepare_test_module,
+    requested_class_methods,
+)
 from .tools import CodingTools, ModelDriver
 from .verifier import Verifier
 
@@ -548,7 +551,11 @@ class CodingHarness:
         while True:
             if module_mode:
                 try:
-                    test_module, guarded_symbols = prepare_test_module(test_module, task)
+                    test_module, guarded_symbols = prepare_test_module(
+                        test_module,
+                        task,
+                        self.tools,
+                    )
                     test_patch = build_test_file_patch(test_module, task.id, self.tools)
                     if guarded_symbols:
                         events.append(
@@ -631,15 +638,8 @@ class CodingHarness:
             if not isinstance(test_target, VerificationTarget):
                 raise TypeError("test patch application must return a VerificationTarget")
             expected_symbols = tuple(
-                dict.fromkeys(
-                    (
-                        f"{class_name}.{method_name}"
-                        for class_name, method_name in re.findall(
-                            r"([A-Za-z_][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)\s*\(",
-                            " ".join((task.objective, *task.acceptance_criteria)),
-                        )
-                    )
-                )
+                f"{class_name}.{method_name}"
+                for class_name, method_name in requested_class_methods(task, self.tools)
             )
             if expected_symbols:
                 test_target = VerificationTarget(

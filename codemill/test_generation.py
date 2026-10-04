@@ -6,16 +6,44 @@ from .models import SubTask
 from .tools import CodingTools
 
 
-def prepare_test_module(source: str, task: SubTask) -> tuple[str, tuple[str, ...]]:
+def requested_class_methods(
+    task: SubTask,
+    tools: CodingTools | None = None,
+) -> tuple[tuple[str, str], ...]:
+    task_text = " ".join((task.objective, *task.acceptance_criteria))
+    explicit = tuple(
+        dict.fromkeys(re.findall(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text))
+    )
+    if explicit or tools is None:
+        return explicit
+    methods = tuple(
+        dict.fromkeys(re.findall(r"\b([a-z_][A-Za-z_0-9]*)\s*\(", task.objective))
+    )
+    paths = re.findall(r"\b([A-Za-z0-9_./-]+\.py)\b", task_text)
+    for path in paths:
+        if path.startswith("/") or ".." in PurePosixPath(path).parts:
+            continue
+        try:
+            module = ast.parse(tools.read_file(path))
+        except (SyntaxError, ValueError):
+            continue
+        classes = [node for node in ast.walk(module) if isinstance(node, ast.ClassDef)]
+        if len(classes) == 1:
+            return tuple((classes[0].name, method) for method in methods)
+    return ()
+
+
+def prepare_test_module(
+    source: str,
+    task: SubTask,
+    tools: CodingTools | None = None,
+) -> tuple[str, tuple[str, ...]]:
     try:
         module = ast.parse(source)
     except SyntaxError as error:
         raise ValueError(f"test module has invalid Python syntax: {error}") from error
 
-    task_text = " ".join((task.objective, *task.acceptance_criteria))
-    requested_methods = tuple(
-        dict.fromkeys(re.findall(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text))
-    )
+    requested_methods = requested_class_methods(task, tools)
     source = _normalize_guard_messages(source, module, requested_methods)
     module = ast.parse(source)
     source_lines = source.splitlines(keepends=True)

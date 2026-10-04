@@ -1,5 +1,4 @@
 import json
-import re
 import socket
 import time
 from dataclasses import asdict
@@ -12,6 +11,7 @@ from urllib.request import Request, urlopen
 from .context import ContextBuilder, summarize_repository
 from .decomposition import DECOMPOSITION_REVIEW_JSON_SCHEMA
 from .models import InferenceMetrics, SubTask, Task, VerificationTarget
+from .test_generation import requested_class_methods
 from .tools import CodingTools
 
 
@@ -298,11 +298,10 @@ class LlamaCppModelDriver:
 
     @staticmethod
     def _test_api_guidance(task: SubTask, tools: CodingTools) -> str:
-        task_text = " ".join((task.objective, *task.acceptance_criteria))
-        requested = re.search(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text)
-        if requested is None:
+        requested = requested_class_methods(task, tools)
+        if not requested:
             return ""
-        class_name, method_name = requested.groups()
+        class_name, method_name = requested[0]
         definitions = json.loads(tools.find_definitions(class_name))
         definition = next(
             (item for item in definitions if item.get("kind") == "class"),
