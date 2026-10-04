@@ -36,7 +36,7 @@ def test_classifies_assertion_with_compact_pytest_trace_as_expected_red():
 
 def test_accepts_attribute_error_for_explicitly_requested_missing_method():
     output = (
-        "FAILED tests/test_status.py::test_status - AttributeError\n"
+        "FAILED tests/test_status.py::test_status\n"
         "tests/test_status.py:2: in test_status\n"
         "    tools.git_status()\n"
         "E   AttributeError: 'LocalRepositoryTools' object has no attribute 'git_status'"

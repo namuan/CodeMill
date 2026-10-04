@@ -181,18 +181,14 @@ class PytestVerifier:
                 output,
             )
         )
-        failed_summaries = re.findall(
-            r"(?m)^FAILED\s+.+?::.+?\s+-\s+([A-Za-z_][A-Za-z_0-9]*)",
-            output,
-        )
         missing_api_red = (
             target is not None
             and bool(missing_api_names)
             and bool(target.expected_missing_symbols)
             and all(name in target.expected_missing_symbols for name in missing_api_names)
-            and bool(failed_summaries)
-            and all(failure == "AttributeError" for failure in failed_summaries)
+            and bool(error_types)
             and all(error_type == "AttributeError" for error_type in error_types)
+            and "DID NOT RAISE" not in output
         )
         has_non_assertion_error = any(error_type != "AssertionError" for error_type in error_types)
         return (
