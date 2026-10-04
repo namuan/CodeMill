@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -40,6 +41,20 @@ def case_record(case_id, repository, revision, reference_revision=None):
     if reference_revision is not None:
         record["reference_revision"] = reference_revision
     return record
+
+
+def test_curated_dataset_contains_pinned_historical_task_cases():
+    dataset = Path(__file__).resolve().parents[1] / "benchmarks" / "cases.jsonl"
+    records = [json.loads(line) for line in dataset.read_text().splitlines() if line.strip()]
+
+    assert {record["id"] for record in records} == {
+        "context-overlap-dedup-001",
+        "git-status-001",
+        "discard-invalid-red-test-001",
+    }
+    assert all(len(record["base_revision"]) == 40 for record in records)
+    assert all(len(record["reference_revision"]) == 40 for record in records)
+    assert all(record["task"]["acceptance_criteria"] for record in records)
 
 
 def test_loads_reference_revision_for_patch_comparison(tmp_path):
