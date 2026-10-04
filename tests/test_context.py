@@ -44,6 +44,7 @@ def test_builds_test_context_from_slice_and_related_tests(tmp_path):
 
     assert "values above high return high" in rendered
     assert "test_clamp" in rendered
+    assert "def clamp(value, low, high)" in rendered
     assert "return max(low, min(value, high))" not in rendered
     assert pack.stage == "test"
     assert pack.char_count <= pack.char_budget

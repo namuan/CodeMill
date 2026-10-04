@@ -192,8 +192,37 @@ class ContextBuilder:
             )
         )
 
+        symbols = self._symbols(" ".join((subtask.objective, *subtask.acceptance_criteria)))
+        interface_count = 0
+        for symbol in symbols:
+            definitions = json.loads(self.tools.find_definitions(symbol))
+            for definition in definitions:
+                if definition["kind"] not in {"class", "function", "method"}:
+                    continue
+                signature = definition.get("signature", "").strip()
+                if not signature:
+                    continue
+                fragments.append(
+                    ContextFragment(
+                        "behavioral_interface",
+                        signature,
+                        f"Existing interface for requested symbol '{symbol}'; use as test-facing API evidence.",
+                        "ast_grep_find_definitions",
+                        75,
+                        definition["path"],
+                        definition["line"],
+                        definition["line"],
+                        (symbol,),
+                    )
+                )
+                interface_count += 1
+                if interface_count >= 3:
+                    break
+            if interface_count >= 3:
+                break
+
         evidence_count = 0
-        for symbol in self._symbols(" ".join((subtask.objective, *subtask.acceptance_criteria))):
+        for symbol in symbols:
             results = json.loads(self.tools.find_tests_for(symbol))
             for match in results:
                 path = match["path"]

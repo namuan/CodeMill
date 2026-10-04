@@ -173,6 +173,51 @@ def repository_tools():
     return LocalRepositoryTools(root)
 
 
+def test_test_module_generation_returns_code_and_leaves_filename_to_harness(repository):
+    server = ResponseServer([response({"code": "def test_greeting():\\n    assert True\\n"})])
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        code = driver.create_test_module(
+            SubTask("ST-001", "preserve greeting", acceptance_criteria=("returns name",)),
+            "plan",
+            repository,
+        )
+
+        assert code.startswith("def test_greeting")
+        request = server.requests[0][1]
+        assert request["response_format"]["json_schema"]["name"] == "write_test"
+        payload = json.loads(request["messages"][1]["content"])
+        assert "harness chooses a new filename" in payload["instructions"]
+        assert "do not invent" in payload["instructions"]
+    finally:
+        server.close()
+
+
+def test_test_module_revision_receives_invalid_red_diagnostics(repository):
+    server = ResponseServer([response({"code": "def test_greeting():\\n    assert True\\n"})])
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        code = driver.revise_test_module(
+            SubTask("ST-001", "preserve greeting", acceptance_criteria=("returns name",)),
+            "plan",
+            repository,
+            "from codemill.context import missing_api",
+            ("ImportError: cannot import name 'missing_api'",),
+        )
+
+        assert code.startswith("def test_greeting")
+        request = server.requests[0][1]
+        assert request["response_format"]["json_schema"]["name"] == "revise_test"
+        payload = json.loads(request["messages"][1]["content"])
+        assert "missing_api" in payload["rejected_module"]
+        assert "ImportError" in payload["diagnostics"][0]
+        assert "Do not weaken" in payload["instructions"]
+    finally:
+        server.close()
+
+
 def test_test_patch_uses_test_stage_context_and_returns_patch(repository):
     server = ResponseServer([response({"patch": "diff --git a/tests/test_greeting.py b/tests/test_greeting.py"})])
     try:
@@ -192,6 +237,7 @@ def test_test_patch_uses_test_stage_context_and_returns_patch(repository):
         request = server.requests[0][1]
         assert "test context" in request["messages"][1]["content"]
         assert "test_greeting" in request["messages"][1]["content"]
+        assert "behavioral_interface" in request["messages"][1]["content"]
     finally:
         server.close()
 

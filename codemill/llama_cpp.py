@@ -97,6 +97,12 @@ PATCH_SCHEMA = {
     "required": ["patch"],
     "additionalProperties": False,
 }
+TEST_MODULE_SCHEMA = {
+    "type": "object",
+    "properties": {"code": {"type": "string"}},
+    "required": ["code"],
+    "additionalProperties": False,
+}
 
 
 class LlamaServerError(RuntimeError):
@@ -219,6 +225,59 @@ class LlamaCppModelDriver:
             TEXT_SCHEMA,
         )
         return result["text"]
+
+    def create_test_module(self, task: SubTask, plan: str, tools: CodingTools) -> str:
+        context = ContextBuilder(tools).build_test_context(task, char_budget=7000)
+        result = self._complete(
+            "write_test",
+            {
+                "subtask": asdict(task),
+                "plan": plan,
+                "context": context.render(),
+                "instructions": (
+                    "Write one minimal, complete Python test module for the behavior. Return only "
+                    "Python source in the JSON code field; the harness chooses a new filename and "
+                    "creates the file. Context test snippets are read-only examples, not edit "
+                    "targets. Never modify or reproduce an existing test module. Use only existing "
+                    "interfaces shown in the context or explicitly named in the task; do not invent "
+                    "functions, classes, or public APIs. Test observable behavior, not implementation "
+                    "details, unless the task explicitly targets a private helper. Include necessary "
+                    "imports and at least one test_ function. Do not include markdown or explanations."
+                ),
+            },
+            TEST_MODULE_SCHEMA,
+        )
+        return result["code"]
+
+    def revise_test_module(
+        self,
+        task: SubTask,
+        plan: str,
+        tools: CodingTools,
+        rejected_module: str,
+        diagnostics: tuple[str, ...],
+    ) -> str:
+        context = ContextBuilder(tools).build_test_context(task, char_budget=7000)
+        result = self._complete(
+            "revise_test",
+            {
+                "subtask": asdict(task),
+                "plan": plan,
+                "context": context.render(),
+                "rejected_module": rejected_module,
+                "diagnostics": diagnostics,
+                "instructions": (
+                    "Revise the focused test module to fix the reported syntax, import, collection, "
+                    "or RED-behavior problem. Return a complete replacement Python module in the "
+                    "JSON code field. Keep the same acceptance behavior, use only evidenced or "
+                    "explicitly named interfaces, and define at least one test_ function. The "
+                    "harness creates a new test file; do not target existing tests or production "
+                    "files. Do not weaken the acceptance criterion to make RED pass."
+                ),
+            },
+            TEST_MODULE_SCHEMA,
+        )
+        return result["code"]
 
     def create_test_patch(self, task: SubTask, plan: str, tools: CodingTools) -> str:
         context = ContextBuilder(tools).build_test_context(task)

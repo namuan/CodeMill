@@ -256,6 +256,54 @@ def test_retries_focused_test_after_preexisting_test_is_protected():
     assert "test_patch_rejected" in [event.name for event in result.events]
 
 
+def test_revises_test_module_after_invalid_red_and_retries_before_implementation():
+    class ModuleTools(FakeTools):
+        def list_tree(self, path=".", depth=2):
+            return ("tests/",) if path == "." else ()
+
+        def apply_test_patch(self, patch, *scope_args):
+            self.patches.append(f"test:{patch}")
+            self.active_test_patch = patch
+            self.current_test_target = VerificationTarget(("tests/test_codemill_st_001.py",))
+            self.patch_paths.append(self.current_test_target.paths[0])
+            return self.current_test_target
+
+    class ModuleModel(FakeModel):
+        def __init__(self):
+            super().__init__()
+            self.revised_modules = []
+
+        def create_test_module(self, task, plan, tools):
+            return "from codemill.context import missing_api\n\ndef test_behavior():\n    assert missing_api()\n"
+
+        def revise_test_module(self, task, plan, tools, rejected_module, diagnostics):
+            self.revised_modules.append((rejected_module, diagnostics))
+            return "def test_behavior():\n    assert True\n"
+
+    tools = ModuleTools()
+    model = ModuleModel()
+    verifier = SequenceVerifier(
+        [
+            VerificationResult(False, ("ImportError: missing_api",), VerificationFailureKind.OTHER),
+            VerificationResult(False, ("expected behavior missing",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+            VerificationResult(True),
+            VerificationResult(True),
+            VerificationResult(True),
+        ]
+    )
+
+    result = CodingHarness(model, tools, verifier).run(Task("fix bug"))
+
+    assert result.status is RunStatus.VERIFIED
+    assert len(model.revised_modules) == 1
+    assert "missing_api" in model.revised_modules[0][0]
+    assert model.revised_modules[0][1] == ("ImportError: missing_api",)
+    assert [purpose for purpose, _ in verifier.targets].count(VerificationPurpose.RED) == 2
+    assert tools.discard_calls == 1
+    assert "red_rejected" in [event.name for event in result.events]
+    assert "test_module_revised" in [event.name for event in result.events]
+
+
 def test_refuses_empty_plan_without_no_change_evidence():
     class EmptyPlanModel(FakeModel):
         def decompose(self, task, tools):

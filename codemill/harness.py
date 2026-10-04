@@ -20,6 +20,7 @@ from .models import (
     VerifiedSliceRecord,
 )
 from .subtask_graph import order_subtasks
+from .test_generation import build_test_file_patch
 from .tools import CodingTools, ModelDriver
 from .verifier import Verifier
 
@@ -33,6 +34,7 @@ class CodingHarness:
     verifier: Verifier
     max_repairs: int = 3
     max_test_patch_retries: int = 1
+    max_test_red_retries: int = 1
 
     def run(self, task: Task) -> RunResult:
         run_id = uuid4().hex
@@ -280,71 +282,21 @@ class CodingHarness:
             events.append(self._event(run_id, "plan_created", task.id))
 
             events.append(self._event(run_id, "test_write_started", task.id))
-            test_patch = self.model.create_test_patch(task, plan, self.tools)
-            for revision_attempt in range(self.max_test_patch_retries + 1):
-                try:
-                    test_target = self.tools.apply_test_patch(
-                        test_patch,
-                        task.expected_scope,
-                        checkpoint,
-                        task_scope,
-                        task_checkpoint,
-                    )
-                    break
-                except ProtectedTestMutationError as error:
-                    revise_test_patch = getattr(self.model, "revise_test_patch", None)
-                    if revision_attempt >= self.max_test_patch_retries or not callable(
-                        revise_test_patch
-                    ):
-                        raise
-                    diagnostics = (str(error),)
-                    events.append(
-                        self._event(
-                            run_id,
-                            "protected_test_mutation_attempt",
-                            task.id,
-                            diagnostics,
-                        )
-                    )
-                    events.append(
-                        self._event(run_id, "test_patch_rejected", task.id, diagnostics)
-                    )
-                    events.append(
-                        self._event(run_id, "test_patch_revision_started", task.id, diagnostics)
-                    )
-                    test_patch = revise_test_patch(
-                        task,
-                        plan,
-                        self.tools,
-                        test_patch,
-                        diagnostics,
-                    )
-                    events.append(self._event(run_id, "test_patch_revised", task.id))
-            if not isinstance(test_target, VerificationTarget):
-                raise TypeError("test patch application must return a VerificationTarget")
-            events.append(self._event(run_id, "test_patch_applied", task.id))
-
-            events.append(self._event(run_id, "red_verify_started", task.id))
-            try:
-                red = self.verifier.verify(VerificationPurpose.RED, test_target)
-                verification_records.append(
-                    VerificationRecord(VerificationPurpose.RED, test_target, red)
-                )
-            except Exception:
-                self.tools.discard_test_patch()
-                raise
+            test_target, red = self._write_and_verify_test(
+                run_id,
+                task,
+                plan,
+                checkpoint,
+                task_scope,
+                task_checkpoint,
+                events,
+                verification_records,
+            )
             if red.ok or red.failure_kind is not VerificationFailureKind.EXPECTED_BEHAVIOR:
-                self.tools.discard_test_patch()
-                events.append(self._event(run_id, "test_patch_discarded", task.id))
                 diagnostics = red.diagnostics or (
                     "focused test did not fail for the expected missing behavior",
                 )
-                events.append(
-                    self._event(run_id, "red_rejected", task.id, diagnostics)
-                )
-                events.append(
-                    self._event(run_id, "subtask_escalated", task.id, diagnostics)
-                )
+                events.append(self._event(run_id, "subtask_escalated", task.id, diagnostics))
                 return SubTaskResult(
                     task.id,
                     RunStatus.ESCALATED,
@@ -544,6 +496,138 @@ class CodingHarness:
                 tuple(events),
                 verifications=tuple(verification_records),
             )
+
+    def _write_and_verify_test(
+        self,
+        run_id: str,
+        task: SubTask,
+        plan: str,
+        checkpoint: int,
+        task_scope: ExpectedScope,
+        task_checkpoint: int,
+        events: list[RunEvent],
+        verification_records: list[VerificationRecord],
+    ) -> tuple[VerificationTarget, VerificationResult]:
+        create_test_module = getattr(self.model, "create_test_module", None)
+        module_mode = callable(create_test_module)
+        test_module = create_test_module(task, plan, self.tools) if module_mode else None
+        test_patch = None if module_mode else self.model.create_test_patch(task, plan, self.tools)
+        patch_revisions = 0
+        red_revisions = 0
+
+        while True:
+            if module_mode:
+                try:
+                    test_patch = build_test_file_patch(test_module, task.id, self.tools)
+                except ValueError as error:
+                    revise_test_module = getattr(self.model, "revise_test_module", None)
+                    if patch_revisions >= self.max_test_patch_retries or not callable(
+                        revise_test_module
+                    ):
+                        raise
+                    diagnostics = (str(error),)
+                    events.append(self._event(run_id, "test_module_rejected", task.id, diagnostics))
+                    events.append(
+                        self._event(run_id, "test_module_revision_started", task.id, diagnostics)
+                    )
+                    test_module = revise_test_module(
+                        task,
+                        plan,
+                        self.tools,
+                        test_module,
+                        diagnostics,
+                    )
+                    patch_revisions += 1
+                    events.append(self._event(run_id, "test_module_revised", task.id))
+                    continue
+
+            try:
+                test_target = self.tools.apply_test_patch(
+                    test_patch,
+                    task.expected_scope,
+                    checkpoint,
+                    task_scope,
+                    task_checkpoint,
+                )
+            except ProtectedTestMutationError as error:
+                if patch_revisions >= self.max_test_patch_retries:
+                    raise
+                diagnostics = (str(error),)
+                events.append(
+                    self._event(
+                        run_id,
+                        "protected_test_mutation_attempt",
+                        task.id,
+                        diagnostics,
+                    )
+                )
+                events.append(self._event(run_id, "test_patch_rejected", task.id, diagnostics))
+                if module_mode:
+                    revise_test = getattr(self.model, "revise_test_module", None)
+                    rejected_candidate = test_module
+                else:
+                    revise_test = getattr(self.model, "revise_test_patch", None)
+                    rejected_candidate = test_patch
+                if not callable(revise_test):
+                    raise
+                events.append(
+                    self._event(run_id, "test_patch_revision_started", task.id, diagnostics)
+                )
+                revised = revise_test(
+                    task,
+                    plan,
+                    self.tools,
+                    rejected_candidate,
+                    diagnostics,
+                )
+                if module_mode:
+                    test_module = revised
+                else:
+                    test_patch = revised
+                patch_revisions += 1
+                events.append(self._event(run_id, "test_patch_revised", task.id))
+                continue
+
+            if not isinstance(test_target, VerificationTarget):
+                raise TypeError("test patch application must return a VerificationTarget")
+            events.append(self._event(run_id, "test_patch_applied", task.id))
+            events.append(self._event(run_id, "red_verify_started", task.id))
+            try:
+                red = self.verifier.verify(VerificationPurpose.RED, test_target)
+                verification_records.append(
+                    VerificationRecord(VerificationPurpose.RED, test_target, red)
+                )
+            except Exception:
+                self.tools.discard_test_patch()
+                raise
+            if not red.ok and red.failure_kind is VerificationFailureKind.EXPECTED_BEHAVIOR:
+                return test_target, red
+
+            self.tools.discard_test_patch()
+            events.append(self._event(run_id, "test_patch_discarded", task.id))
+            diagnostics = red.diagnostics or (
+                "focused test did not fail for the expected missing behavior",
+            )
+            events.append(self._event(run_id, "red_rejected", task.id, diagnostics))
+            revise_test_module = getattr(self.model, "revise_test_module", None)
+            if (
+                not module_mode
+                or red_revisions >= self.max_test_red_retries
+                or not callable(revise_test_module)
+            ):
+                return test_target, red
+            events.append(
+                self._event(run_id, "test_module_revision_started", task.id, diagnostics)
+            )
+            test_module = revise_test_module(
+                task,
+                plan,
+                self.tools,
+                test_module,
+                diagnostics,
+            )
+            red_revisions += 1
+            events.append(self._event(run_id, "test_module_revised", task.id))
 
     @staticmethod
     def _event(
