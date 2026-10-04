@@ -1,0 +1,233 @@
+import subprocess
+
+from codemill.models import VerificationTarget
+from codemill.repository_tools import LocalRepositoryTools
+
+
+def initialize_repository(path):
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "tests@example.com"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "CodeMill Tests"], check=True)
+    (path / "src").mkdir()
+    (path / "src" / "example.py").write_text("value = 1\n")
+    subprocess.run(["git", "-C", str(path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-qm", "initial"], check=True)
+
+
+def test_applies_test_patch_and_returns_focused_verification_target(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,2 @@
++from src.example import value
++assert value == 1
+"""
+
+    target = tools.apply_test_patch(patch)
+
+    assert target == VerificationTarget(("tests/test_example.py",))
+    assert (tmp_path / "tests" / "test_example.py").read_text() == (
+        "from src.example import value\nassert value == 1\n"
+    )
+
+
+def test_rejects_test_patch_that_changes_production_code(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1 +1,2 @@
+ value = 1
++value += 1
+"""
+
+    try:
+        tools.apply_test_patch(patch)
+    except ValueError as error:
+        assert "test patch may only modify test files" in str(error)
+    else:
+        raise AssertionError("production file patch was accepted as a test patch")
+
+    assert (tmp_path / "src" / "example.py").read_text() == "value = 1\n"
+
+
+def test_discards_unaccepted_test_patch(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,1 @@
++assert True
+"""
+
+    tools.apply_test_patch(patch)
+    tools.discard_test_patch()
+
+    assert not (tmp_path / "tests" / "test_example.py").exists()
+    assert tools.git_diff() == ""
+
+
+def test_refuses_to_patch_a_dirty_repository(tmp_path):
+    initialize_repository(tmp_path)
+    (tmp_path / "src" / "example.py").write_text("uncommitted change\n")
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,1 @@
++assert True
+"""
+
+    try:
+        tools.apply_test_patch(patch)
+    except RuntimeError as error:
+        assert "repository must be clean" in str(error)
+    else:
+        raise AssertionError("dirty repository was accepted for mutation")
+
+    assert not (tmp_path / "tests" / "test_example.py").exists()
+
+
+def test_protects_frozen_tests_while_applying_production_patches(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    test_patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,1 @@
++assert True
+"""
+    target = tools.apply_test_patch(test_patch)
+    protected = tools.freeze_tests()
+    implementation_patch = """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+
+    assert target.paths == protected.paths
+    tools.apply_production_patch(implementation_patch, protected)
+
+    assert (tmp_path / "src" / "example.py").read_text() == "value = 2\n"
+    assert "assert True" in tools.git_diff()
+    assert "value = 2" in tools.git_diff()
+
+
+def test_rejects_production_patch_if_protected_test_fingerprint_changed(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    test_patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1 @@
++assert True
+"""
+    tools.apply_test_patch(test_patch)
+    protected = tools.freeze_tests()
+    (tmp_path / "tests" / "test_example.py").write_text("assert False\n")
+    production_patch = """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+
+    try:
+        tools.apply_production_patch(production_patch, protected)
+    except PermissionError as error:
+        assert "fingerprint changed" in str(error)
+    else:
+        raise AssertionError("mutated protected test was accepted")
+
+    assert (tmp_path / "src" / "example.py").read_text() == "value = 1\n"
+
+
+def test_rejects_production_patch_that_changes_a_test_file(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    test_patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1 @@
++assert True
+"""
+    tools.apply_test_patch(test_patch)
+    protected = tools.freeze_tests()
+    production_patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+--- a/tests/test_example.py
++++ b/tests/test_example.py
+@@ -1 +1 @@
+-assert True
++assert False
+"""
+
+    try:
+        tools.apply_production_patch(production_patch, protected)
+    except PermissionError as error:
+        assert "may not modify test files" in str(error)
+    else:
+        raise AssertionError("production patch modified a protected test")
+
+    assert (tmp_path / "tests" / "test_example.py").read_text() == "assert True\n"
+
+
+def test_rejects_mismatched_diff_and_file_headers(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+--- /dev/null
++++ b/../outside.py
+@@ -0,0 +1 @@
++value = 1
+"""
+
+    try:
+        tools.apply_test_patch(patch)
+    except ValueError as error:
+        assert "headers do not match" in str(error)
+    else:
+        raise AssertionError("mismatched diff headers were accepted")
+
+    assert not (tmp_path.parent / "outside.py").exists()
+
+
+def test_rejects_paths_outside_repository_in_patch(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    patch = """diff --git a/../outside.py b/../outside.py
+new file mode 100644
+--- /dev/null
++++ b/../outside.py
+@@ -0,0 +1 @@
++value = 1
+"""
+
+    try:
+        tools.apply_test_patch(patch)
+    except ValueError as error:
+        assert "escapes repository root" in str(error)
+    else:
+        raise AssertionError("path traversal patch was accepted")

@@ -108,6 +108,59 @@ def test_rejects_empty_structural_patterns(tmp_path):
         tools.find_structural("  ")
 
 
+def test_finds_structural_function_calls(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "module.py").write_text(
+        "def total(items):\n    return sum(items)\n\nvalue = total([1, 2])\n"
+    )
+    tools = LocalRepositoryTools(tmp_path)
+
+    matches = json.loads(tools.find_calls("total"))
+
+    assert len(matches) == 1
+    assert matches[0]["text"] == "total([1, 2])"
+    assert matches[0]["start_line"] == 4
+
+
+def test_finds_imports_by_imported_name(tmp_path):
+    (tmp_path / "module.py").write_text("import json\nfrom pathlib import Path\n")
+    tools = LocalRepositoryTools(tmp_path)
+
+    matches = json.loads(tools.find_imports("Path"))
+
+    assert len(matches) == 1
+    assert matches[0]["name"] == "Path"
+    assert matches[0]["signature"] == "from pathlib import Path"
+    assert matches[0]["line"] == 2
+
+
+def test_finds_tests_referencing_a_symbol(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "maths.py").write_text(
+        "def calculate(value):\n    return value + 1\n"
+    )
+    (tmp_path / "tests" / "test_maths.py").write_text(
+        "from src.maths import calculate\n\ndef test_calculate():\n    assert calculate(1) == 2\n"
+    )
+    tools = LocalRepositoryTools(tmp_path)
+
+    matches = json.loads(tools.find_tests_for("calculate"))
+
+    assert matches
+    assert all(match["path"].startswith("tests/") for match in matches)
+    assert any("calculate(1)" in match["text"] for match in matches)
+    path_matches = json.loads(tools.find_tests_for("src/maths.py"))
+    assert any("calculate(1)" in match["text"] for match in path_matches)
+
+
+def test_rejects_invalid_call_names(tmp_path):
+    tools = LocalRepositoryTools(tmp_path)
+
+    with pytest.raises(ValueError, match="name must be a Python identifier"):
+        tools.find_calls("func()")
+
+
 def test_rejects_empty_definition_names(tmp_path):
     tools = LocalRepositoryTools(tmp_path)
 
