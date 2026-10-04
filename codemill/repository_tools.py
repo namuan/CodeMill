@@ -215,6 +215,7 @@ class LocalRepositoryTools:
                     "--view=expanded",
                     "--color",
                     "never",
+                    *self._sensitive_glob_arguments(),
                     ".",
                 ],
                 cwd=self.root,
@@ -302,6 +303,7 @@ class LocalRepositoryTools:
                     "imports",
                     "--color",
                     "never",
+                    *self._sensitive_glob_arguments(),
                     ".",
                 ],
                 cwd=self.root,
@@ -359,6 +361,7 @@ class LocalRepositoryTools:
                     pattern,
                     "--lang",
                     language,
+                    *self._sensitive_glob_arguments(),
                     ".",
                 ],
                 cwd=self.root,
@@ -409,6 +412,42 @@ class LocalRepositoryTools:
                     "--max-columns",
                     "300",
                     "--max-columns-preview",
+                    "--glob",
+                    "!**/.env*",
+                    "--glob",
+                    "!**/*secret*",
+                    "--glob",
+                    "!**/*credential*",
+                    "--glob",
+                    "!**/*.pem",
+                    "--glob",
+                    "!**/*.key",
+                    "--glob",
+                    "!**/*.p12",
+                    "--glob",
+                    "!**/*.pfx",
+                    "--glob",
+                    "!**/*.tfstate",
+                    "--glob",
+                    "!**/id_rsa",
+                    "--glob",
+                    "!**/id_ed25519",
+                    "--glob",
+                    "!**/id_ecdsa",
+                    "--glob",
+                    "!**/id_dsa",
+                    "--glob",
+                    "!**/.ssh/**",
+                    "--glob",
+                    "!**/.aws/**",
+                    "--glob",
+                    "!**/.gnupg/**",
+                    "--glob",
+                    "!**/.netrc",
+                    "--glob",
+                    "!**/.npmrc",
+                    "--glob",
+                    "!**/.pypirc",
                     "--",
                     query,
                     ".",
@@ -621,11 +660,63 @@ class LocalRepositoryTools:
             or ".." in Path(path).parts
         ):
             raise ValueError("patch path escapes repository root or uses unsupported characters")
+        if self._is_sensitive_path(path):
+            raise ScopeViolationError("patch targets a sensitive path")
         candidate = (self.root / path).resolve(strict=False)
         try:
             candidate.relative_to(self.root)
         except ValueError as error:
             raise ValueError("patch path escapes repository root") from error
+
+    @staticmethod
+    def _sensitive_glob_arguments() -> tuple[str, ...]:
+        globs = (
+            "!**/.env*",
+            "!**/*secret*",
+            "!**/*credential*",
+            "!**/*.pem",
+            "!**/*.key",
+            "!**/*.p12",
+            "!**/*.pfx",
+            "!**/*.tfstate",
+            "!**/id_rsa",
+            "!**/id_ed25519",
+            "!**/id_ecdsa",
+            "!**/id_dsa",
+            "!**/.ssh/**",
+            "!**/.aws/**",
+            "!**/.gnupg/**",
+            "!**/.netrc",
+            "!**/.npmrc",
+            "!**/.pypirc",
+        )
+        return tuple(argument for glob in globs for argument in ("--globs", glob))
+
+    @staticmethod
+    def _is_sensitive_path(path: str) -> bool:
+        parts = tuple(part.casefold() for part in Path(path).parts)
+        filename = parts[-1]
+        sensitive_directories = {".aws", ".gnupg", ".ssh", "credentials", "secrets"}
+        sensitive_names = {
+            ".netrc",
+            ".npmrc",
+            ".pypirc",
+            "id_dsa",
+            "id_ed25519",
+            "id_ecdsa",
+            "id_rsa",
+        }
+        sensitive_suffixes = {".key", ".pem", ".p12", ".pfx", ".tfstate"}
+        return (
+            any(part in sensitive_directories for part in parts[:-1])
+            or filename in sensitive_names
+            or filename == ".env"
+            or filename.startswith(".env.")
+            or "secret" in filename
+            or "credential" in filename
+            or "service-account" in filename
+            or Path(filename).suffix in sensitive_suffixes
+        )
 
     @staticmethod
     def _is_test_path(path: str) -> bool:
@@ -719,4 +810,6 @@ class LocalRepositoryTools:
             raise ValueError("path escapes repository root") from error
         if not resolved.is_file():
             raise ValueError("path is not a regular file")
+        if self._is_sensitive_path(relative_path.as_posix()):
+            raise PermissionError("refusing to read a sensitive path")
         return resolved
