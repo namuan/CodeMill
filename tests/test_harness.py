@@ -3,6 +3,7 @@ from dataclasses import asdict
 
 from codemill.harness import CodingHarness
 from codemill.models import (
+    ProtectedTestMutationError,
     ProtectedTests,
     RunStatus,
     ScopeViolationError,
@@ -210,6 +211,49 @@ def test_verifies_already_satisfied_task_without_mutation():
         VerificationPurpose.FINAL,
     )
     assert "no_change_verified" in [event.name for event in result.events]
+
+
+def test_retries_focused_test_after_preexisting_test_is_protected():
+    class RetryTools(FakeTools):
+        def __init__(self):
+            super().__init__()
+            self.test_patch_calls = 0
+
+        def apply_test_patch(self, patch, *scope_args):
+            self.test_patch_calls += 1
+            if self.test_patch_calls == 1:
+                raise ProtectedTestMutationError("test patch may not modify a pre-existing file")
+            return super().apply_test_patch(patch, *scope_args)
+
+    class RetryModel(FakeModel):
+        def __init__(self):
+            super().__init__()
+            self.revisions = []
+
+        def revise_test_patch(self, task, plan, tools, rejected_patch, diagnostics):
+            self.revisions.append((rejected_patch, diagnostics))
+            return "replacement focused test patch ST-001"
+
+    tools = RetryTools()
+    model = RetryModel()
+    verifier = SequenceVerifier(
+        [
+            VerificationResult(False, ("expected behavior missing",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+            VerificationResult(True),
+            VerificationResult(True),
+            VerificationResult(True),
+        ]
+    )
+
+    result = CodingHarness(model, tools, verifier).run(Task("fix bug"))
+
+    assert result.status is RunStatus.VERIFIED
+    assert model.revisions == [
+        ("test patch ST-001", ("test patch may not modify a pre-existing file",))
+    ]
+    assert tools.patches[0] == "test:replacement focused test patch ST-001"
+    assert "protected_test_mutation_attempt" in [event.name for event in result.events]
+    assert "test_patch_rejected" in [event.name for event in result.events]
 
 
 def test_refuses_empty_plan_without_no_change_evidence():

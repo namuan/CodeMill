@@ -242,6 +242,34 @@ class LlamaCppModelDriver:
         )
         return result["patch"]
 
+    def revise_test_patch(
+        self,
+        task: SubTask,
+        plan: str,
+        tools: CodingTools,
+        rejected_patch: str,
+        diagnostics: tuple[str, ...],
+    ) -> str:
+        context = ContextBuilder(tools).build_test_context(task)
+        result = self._complete(
+            "revise_test",
+            {
+                "subtask": asdict(task),
+                "plan": plan,
+                "context": context.render(),
+                "rejected_patch": rejected_patch,
+                "diagnostics": diagnostics,
+                "instructions": (
+                    "Replace the rejected patch with a valid git-apply-compatible diff that "
+                    "adds a new focused test file at a path that does not already exist. "
+                    "Do not modify, delete, or rewrite any existing test file or production file. "
+                    "Use exact unified-diff hunk counts and return no markdown or explanation."
+                ),
+            },
+            PATCH_SCHEMA,
+        )
+        return result["patch"]
+
     def create_patch(
         self,
         task: SubTask,

@@ -196,6 +196,29 @@ def test_test_patch_uses_test_stage_context_and_returns_patch(repository):
         server.close()
 
 
+def test_revises_rejected_test_patch_with_existing_file_diagnostic(repository):
+    server = ResponseServer([response({"patch": "diff --git a/tests/test_new.py b/tests/test_new.py"})])
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        patch = driver.revise_test_patch(
+            SubTask("ST-001", "preserve greeting", acceptance_criteria=("returns name",)),
+            "plan",
+            repository,
+            "patch to existing test",
+            ("test patch may not modify a pre-existing test file",),
+        )
+
+        assert patch.startswith("diff --git")
+        request = server.requests[0][1]
+        assert request["response_format"]["json_schema"]["name"] == "revise_test"
+        payload = json.loads(request["messages"][1]["content"])
+        assert payload["rejected_patch"] == "patch to existing test"
+        assert "does not already exist" in payload["instructions"]
+    finally:
+        server.close()
+
+
 def test_locate_uses_structural_repository_context(repository):
     server = ResponseServer([response({"text": "Implement greeting in src/greeting.py."})])
     try:

@@ -32,6 +32,7 @@ class CodingHarness:
     tools: CodingTools
     verifier: Verifier
     max_repairs: int = 3
+    max_test_patch_retries: int = 1
 
     def run(self, task: Task) -> RunResult:
         run_id = uuid4().hex
@@ -280,13 +281,45 @@ class CodingHarness:
 
             events.append(self._event(run_id, "test_write_started", task.id))
             test_patch = self.model.create_test_patch(task, plan, self.tools)
-            test_target = self.tools.apply_test_patch(
-                test_patch,
-                task.expected_scope,
-                checkpoint,
-                task_scope,
-                task_checkpoint,
-            )
+            for revision_attempt in range(self.max_test_patch_retries + 1):
+                try:
+                    test_target = self.tools.apply_test_patch(
+                        test_patch,
+                        task.expected_scope,
+                        checkpoint,
+                        task_scope,
+                        task_checkpoint,
+                    )
+                    break
+                except ProtectedTestMutationError as error:
+                    revise_test_patch = getattr(self.model, "revise_test_patch", None)
+                    if revision_attempt >= self.max_test_patch_retries or not callable(
+                        revise_test_patch
+                    ):
+                        raise
+                    diagnostics = (str(error),)
+                    events.append(
+                        self._event(
+                            run_id,
+                            "protected_test_mutation_attempt",
+                            task.id,
+                            diagnostics,
+                        )
+                    )
+                    events.append(
+                        self._event(run_id, "test_patch_rejected", task.id, diagnostics)
+                    )
+                    events.append(
+                        self._event(run_id, "test_patch_revision_started", task.id, diagnostics)
+                    )
+                    test_patch = revise_test_patch(
+                        task,
+                        plan,
+                        self.tools,
+                        test_patch,
+                        diagnostics,
+                    )
+                    events.append(self._event(run_id, "test_patch_revised", task.id))
             if not isinstance(test_target, VerificationTarget):
                 raise TypeError("test patch application must return a VerificationTarget")
             events.append(self._event(run_id, "test_patch_applied", task.id))
