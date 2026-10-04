@@ -241,8 +241,13 @@ class LlamaCppModelDriver:
                     "targets. Never modify or reproduce an existing test module. Use only existing "
                     "interfaces shown in the context or explicitly named in the task; do not invent "
                     "functions, classes, or public APIs. Test observable behavior, not implementation "
-                    "details, unless the task explicitly targets a private helper. Include necessary "
-                    "imports and at least one test_ function. Do not include markdown or explanations."
+                    "details, unless the task explicitly targets a private helper. RED is valid only "
+                    "when a test assertion fails; import, collection, setup, and AttributeError failures "
+                    "are invalid. If the requested method is absent from current code, assert its "
+                    "presence with callable(getattr(existing_class_or_instance, 'method_name', None)) "
+                    "before calling it, so the missing behavior fails as an assertion. Include "
+                    "necessary imports and at least one test_ function. Do not include markdown or "
+                    "explanations."
                 ),
             },
             TEST_MODULE_SCHEMA,
@@ -272,7 +277,10 @@ class LlamaCppModelDriver:
                     "JSON code field. Keep the same acceptance behavior, use only evidenced or "
                     "explicitly named interfaces, and define at least one test_ function. The "
                     "harness creates a new test file; do not target existing tests or production "
-                    "files. Do not weaken the acceptance criterion to make RED pass."
+                    "files. RED is valid only when a test assertion fails; import, collection, setup, "
+                    "and AttributeError failures are invalid. If the requested method is absent, "
+                    "assert callable(getattr(existing_class_or_instance, 'method_name', None)) "
+                    "before calling it. Do not weaken the acceptance criterion to make RED pass."
                 ),
             },
             TEST_MODULE_SCHEMA,

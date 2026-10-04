@@ -190,6 +190,8 @@ def test_test_module_generation_returns_code_and_leaves_filename_to_harness(repo
         payload = json.loads(request["messages"][1]["content"])
         assert "harness chooses a new filename" in payload["instructions"]
         assert "do not invent" in payload["instructions"]
+        assert "AttributeError failures are invalid" in payload["instructions"]
+        assert "callable(getattr" in payload["instructions"]
     finally:
         server.close()
 
@@ -214,6 +216,8 @@ def test_test_module_revision_receives_invalid_red_diagnostics(repository):
         assert "missing_api" in payload["rejected_module"]
         assert "ImportError" in payload["diagnostics"][0]
         assert "Do not weaken" in payload["instructions"]
+        assert "AttributeError failures are invalid" in payload["instructions"]
+        assert "callable(getattr" in payload["instructions"]
     finally:
         server.close()
 
