@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from .benchmark import BenchmarkCase, BenchmarkDatasetError, verify_benchmark_checkout
-from .models import InferenceMetrics, RunResult, RunStatus
+from .models import InferenceMetrics, RunResult, RunStatus, Task
 
 
 class BenchmarkRunnerError(RuntimeError):
+    pass
+
+
+class EvaluationReportError(RuntimeError):
     pass
 
 
@@ -22,6 +30,7 @@ class BenchmarkRun:
     result: RunResult
     metrics: RunMetrics
     reference_revision: str | None = None
+    task: Task | None = None
 
 
 class BenchmarkRunner:
@@ -77,6 +86,7 @@ class BenchmarkRunner:
                     result,
                     metrics,
                     case.reference_revision,
+                    case.task,
                 )
             finally:
                 removal = self._git_result(
@@ -214,3 +224,59 @@ class EvaluationSummary:
         if not metrics or any(getattr(metric, field) is None for metric in metrics):
             return None
         return sum(getattr(metric, field) for metric in metrics)
+
+
+def write_evaluation_report(
+    path: str | Path,
+    runs: tuple[BenchmarkRun, ...],
+    model_identifier: str,
+) -> Path:
+    if not model_identifier.strip():
+        raise ValueError("model_identifier must not be empty")
+    destination = Path(path).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise EvaluationReportError(f"evaluation report already exists: {destination}")
+    metrics = tuple(run.metrics for run in runs)
+    summary = EvaluationSummary.from_metrics(metrics)
+    document = {
+        "format_version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "model_identifier": model_identifier,
+        "python_version": sys.version.split()[0],
+        "summary": {
+            **asdict(summary),
+            "success_rate": summary.success_rate,
+        },
+        "runs": [
+            {
+                "case_id": run.case_id,
+                "base_revision": run.base_revision,
+                "reference_revision": run.reference_revision,
+                "task": asdict(run.task) if run.task is not None else None,
+                "metrics": asdict(run.metrics),
+                "result": asdict(run.result),
+            }
+            for run in runs
+        ],
+    }
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.name}-",
+            suffix=".tmp",
+            delete=False,
+        ) as output:
+            temporary = Path(output.name)
+            output.write(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+        os.replace(temporary, destination)
+        temporary = None
+        return destination
+    except OSError as error:
+        raise EvaluationReportError(f"could not write evaluation report: {error}") from error
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

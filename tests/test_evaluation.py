@@ -1,10 +1,21 @@
-from codemill.evaluation import EvaluationSummary, RunMetrics
+import json
+
+import pytest
+
+from codemill.evaluation import (
+    BenchmarkRun,
+    EvaluationReportError,
+    EvaluationSummary,
+    RunMetrics,
+    write_evaluation_report,
+)
 from codemill.models import (
     InferenceMetrics,
     RunEvent,
     RunResult,
     RunStatus,
     SubTaskResult,
+    Task,
     VerificationPurpose,
     VerifiedSliceRecord,
 )
@@ -98,6 +109,45 @@ def test_aggregates_success_escalation_and_repair_metrics():
     assert summary.repair_attempts == 1
     assert summary.test_mutation_attempts == 0
     assert summary.success_rate == 1 / 3
+
+
+def test_writes_reproducible_benchmark_report(tmp_path):
+    result = RunResult(
+        RunStatus.ESCALATED,
+        0,
+        "run-report",
+        diagnostics=("decomposition was rejected",),
+        events=(RunEvent("run-report", "run_escalated"),),
+    )
+    metrics = RunMetrics.from_result(
+        result,
+        (InferenceMetrics("decompose", 1.25, 20, 5, 25),),
+    )
+    run = BenchmarkRun(
+        "case-001",
+        "a" * 40,
+        result,
+        metrics,
+        "b" * 40,
+        Task("implement feature", ("feature works",)),
+    )
+
+    report_path = write_evaluation_report(
+        tmp_path / "nested" / "report.json",
+        (run,),
+        "local-coder-9b-q8",
+    )
+
+    report = json.loads(report_path.read_text())
+    assert report["model_identifier"] == "local-coder-9b-q8"
+    assert report["runs"][0]["case_id"] == "case-001"
+    assert report["runs"][0]["task"]["objective"] == "implement feature"
+    assert report["runs"][0]["metrics"]["total_tokens"] == 25
+    assert report["summary"]["success_rate"] == 0.0
+    assert report["runs"][0]["result"]["diagnostics"] == ["decomposition was rejected"]
+
+    with pytest.raises(EvaluationReportError, match="already exists"):
+        write_evaluation_report(report_path, (run,), "local-coder-9b-q8")
 
 
 def test_empty_evaluation_has_zero_success_rate():
