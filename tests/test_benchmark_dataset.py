@@ -39,6 +39,18 @@ def case_record(case_id, repository, revision):
     }
 
 
+def test_loads_repository_relative_to_explicit_dataset_root(tmp_path):
+    revision = create_repository(tmp_path / "fixture")
+    dataset_directory = tmp_path / "datasets"
+    dataset_directory.mkdir()
+    dataset = dataset_directory / "cases.jsonl"
+    write_case_file(dataset, [case_record("rooted", "fixture", revision)])
+
+    cases = load_benchmark_cases(dataset, repository_root=tmp_path)
+
+    assert cases[0].repository == (tmp_path / "fixture").resolve()
+
+
 def test_loads_repository_pinned_benchmark_case(tmp_path):
     revision = create_repository(tmp_path / "fixture")
     dataset = tmp_path / "cases.jsonl"

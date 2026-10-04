@@ -21,11 +21,18 @@ class BenchmarkCase:
     task: Task
 
 
-def load_benchmark_cases(path: str | Path) -> tuple[BenchmarkCase, ...]:
+def load_benchmark_cases(
+    path: str | Path,
+    repository_root: str | Path | None = None,
+) -> tuple[BenchmarkCase, ...]:
     dataset_path = Path(path).resolve(strict=True)
     if not dataset_path.is_file():
         raise BenchmarkDatasetError("benchmark dataset must be a file")
-    root = dataset_path.parent.resolve()
+    root = (
+        Path(repository_root).resolve(strict=True)
+        if repository_root is not None
+        else dataset_path.parent.resolve()
+    )
     cases = []
     identifiers = set()
     for line_number, line in enumerate(dataset_path.read_text(encoding="utf-8").splitlines(), 1):
