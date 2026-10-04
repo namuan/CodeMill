@@ -6,6 +6,7 @@ from .models import (
     RunEvent,
     RunResult,
     RunStatus,
+    ScopeViolationError,
     SubTask,
     SubTaskResult,
     Task,
@@ -162,7 +163,11 @@ class CodingHarness:
 
             events.append(self._event(run_id, "test_write_started", task.id))
             test_patch = self.model.create_test_patch(task, plan, self.tools)
-            test_target = self.tools.apply_test_patch(test_patch)
+            test_target = self.tools.apply_test_patch(
+                test_patch,
+                task.expected_scope,
+                checkpoint,
+            )
             if not isinstance(test_target, VerificationTarget):
                 raise TypeError("test patch application must return a VerificationTarget")
             events.append(self._event(run_id, "test_patch_applied", task.id))
@@ -209,7 +214,12 @@ class CodingHarness:
                 red.diagnostics,
             )
             attempts += 1
-            self.tools.apply_production_patch(patch, protected_tests)
+            self.tools.apply_production_patch(
+                patch,
+                protected_tests,
+                task.expected_scope,
+                checkpoint,
+            )
             events.append(self._event(run_id, "patch_applied", task.id))
 
             while True:
@@ -321,8 +331,23 @@ class CodingHarness:
                     test_target,
                 )
                 attempts += 1
-                self.tools.apply_production_patch(patch, protected_tests)
+                self.tools.apply_production_patch(
+                    patch,
+                    protected_tests,
+                    task.expected_scope,
+                    checkpoint,
+                )
                 events.append(self._event(run_id, "repair_patch_applied", task.id))
+        except ScopeViolationError as error:
+            diagnostics = (str(error),)
+            events.append(self._event(run_id, "scope_violation", task.id, diagnostics))
+            return SubTaskResult(
+                task.id,
+                RunStatus.ESCALATED,
+                attempts,
+                diagnostics,
+                tuple(events),
+            )
         except Exception as error:
             diagnostics = self._exception_diagnostic(error)
             events.append(

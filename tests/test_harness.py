@@ -5,6 +5,7 @@ from codemill.harness import CodingHarness
 from codemill.models import (
     ProtectedTests,
     RunStatus,
+    ScopeViolationError,
     SubTask,
     Task,
     VerificationFailureKind,
@@ -28,7 +29,7 @@ class FakeTools:
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
     def git_diff(self): return "diff"
-    def apply_test_patch(self, patch):
+    def apply_test_patch(self, patch, scope=None, checkpoint=None):
         self.patches.append(f"test:{patch}")
         self.active_test_patch = patch
         subtask_id = patch.rsplit(" ", 1)[-1]
@@ -52,7 +53,7 @@ class FakeTools:
     def changed_files_since(self, checkpoint):
         return tuple(sorted(set(self.patch_paths[checkpoint:])))
 
-    def apply_production_patch(self, patch, protected_tests):
+    def apply_production_patch(self, patch, protected_tests, scope=None, checkpoint=None):
         if protected_tests != self.test_protection:
             raise PermissionError("protected test set mismatch")
         if patch == "modify-protected-test":
@@ -423,9 +424,25 @@ def test_records_decomposition_errors_as_failed_runs():
     assert result.events[-1].name == "run_failed"
 
 
+def test_escalates_scope_violations_before_mutating():
+    class OverBudgetTools(FakeTools):
+        def apply_test_patch(self, patch, scope=None, checkpoint=None):
+            raise ScopeViolationError("patch exceeds changed-line budget")
+
+    tools = OverBudgetTools()
+    verifier = SequenceVerifier([])
+
+    result = CodingHarness(FakeModel(), tools, verifier).run(Task("feature"))
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.diagnostics == ("patch exceeds changed-line budget",)
+    assert verifier.purposes == []
+    assert "scope_violation" in [event.name for event in result.events]
+
+
 def test_records_patch_errors_on_the_subtask_result():
     class FailingTools(FakeTools):
-        def apply_production_patch(self, patch, protected_tests):
+        def apply_production_patch(self, patch, protected_tests, scope=None, checkpoint=None):
             raise OSError("patch rejected")
 
     result = CodingHarness(

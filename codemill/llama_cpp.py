@@ -40,7 +40,7 @@ DECOMPOSITION_SCHEMA = {
                         "type": "object",
                         "properties": {
                             "max_files": {"type": "integer", "minimum": 1},
-                            "max_changed_lines": {"type": "integer", "minimum": 1},
+                            "max_changed_lines": {"type": "integer", "minimum": 0},
                             "allow_dependencies": {"type": "boolean"},
                             "allow_public_api": {"type": "boolean"},
                             "allow_schema_changes": {"type": "boolean"},

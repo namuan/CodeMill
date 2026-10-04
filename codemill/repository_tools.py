@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .models import GitStatus, ProtectedTests, VerificationTarget
+from .models import ExpectedScope, GitStatus, ProtectedTests, ScopeViolationError, VerificationTarget
 
 
 class LocalRepositoryTools:
@@ -32,7 +32,12 @@ class LocalRepositoryTools:
         self._protected_tests: ProtectedTests | None = None
         self._patch_log: list[tuple[str, str]] = []
 
-    def apply_test_patch(self, patch: str) -> VerificationTarget:
+    def apply_test_patch(
+        self,
+        patch: str,
+        scope: ExpectedScope | None = None,
+        checkpoint: int | None = None,
+    ) -> VerificationTarget:
         if self._active_test_patch is not None:
             raise RuntimeError("a test patch is already awaiting RED verification")
         self._ensure_clean_git_repository()
@@ -41,6 +46,7 @@ class LocalRepositoryTools:
             raise ValueError("test patch may only modify test files")
         if self._test_paths.intersection(paths):
             raise ValueError("test patch may not modify an already protected test")
+        self._validate_scope(patch, scope, checkpoint)
         self._apply_git_patch(patch)
         self._active_test_patch = (patch, paths)
         self._patch_log.append(("test", patch))
@@ -67,7 +73,13 @@ class LocalRepositoryTools:
         self._active_test_patch = None
         return protected
 
-    def apply_production_patch(self, patch: str, protected_tests: ProtectedTests) -> None:
+    def apply_production_patch(
+        self,
+        patch: str,
+        protected_tests: ProtectedTests,
+        scope: ExpectedScope | None = None,
+        checkpoint: int | None = None,
+    ) -> None:
         if self._protected_tests is None or protected_tests != self._protected_tests:
             raise PermissionError("protected test set does not match the active run")
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
@@ -75,6 +87,7 @@ class LocalRepositoryTools:
         paths = self._parse_patch_paths(patch)
         if any(self._is_test_path(path) for path in paths):
             raise PermissionError("production patch may not modify test files")
+        self._validate_scope(patch, scope, checkpoint)
         self._apply_git_patch(patch)
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
             self._apply_git_patch(patch, reverse=True)
@@ -463,6 +476,93 @@ class LocalRepositoryTools:
         if status.stdout.strip():
             raise RuntimeError("repository must be clean before CodeMill patching")
         self._initial_clean_checked = True
+
+    def _validate_scope(
+        self,
+        patch: str,
+        scope: ExpectedScope | None,
+        checkpoint: int | None,
+    ) -> None:
+        if scope is None:
+            return
+        if checkpoint is None:
+            checkpoint = len(self._patch_log)
+        if isinstance(checkpoint, bool) or not isinstance(checkpoint, int):
+            raise ValueError("patch checkpoint must be an integer")
+        if checkpoint < 0 or checkpoint > len(self._patch_log):
+            raise ValueError("patch checkpoint is outside the current run")
+        candidate_patches = [existing for _, existing in self._patch_log[checkpoint:]] + [patch]
+        changed_paths = set()
+        changed_lines = 0
+        dependency_files = {
+            "cargo.toml",
+            "gemfile",
+            "go.mod",
+            "package.json",
+            "pyproject.toml",
+            "requirements.txt",
+            "setup.cfg",
+            "uv.lock",
+            "poetry.lock",
+            "package-lock.json",
+            "yarn.lock",
+        }
+        for candidate in candidate_patches:
+            paths = self._parse_patch_paths(candidate)
+            changed_paths.update(paths)
+            changed_lines += self._changed_line_count(candidate)
+            for path in paths:
+                lowered = path.casefold()
+                filename = Path(path).name.casefold()
+                if not scope.allow_dependencies and (
+                    filename in dependency_files or filename.startswith("requirements")
+                ):
+                    raise ScopeViolationError("patch exceeds dependency-change permission")
+                if not scope.allow_schema_changes and (
+                    "schema" in lowered
+                    or "migration" in lowered
+                    or lowered.endswith((".proto", ".sql"))
+                ):
+                    raise ScopeViolationError("patch exceeds schema-change permission")
+            if not scope.allow_public_api:
+                current_path = None
+                for line in candidate.splitlines():
+                    header = re.match(r"^diff --git a/.+ b/(.+)$", line)
+                    if header:
+                        current_path = header.group(1)
+                        continue
+                    if (
+                        current_path is None
+                        or self._is_test_path(current_path)
+                        or not line.startswith(("+", "-"))
+                        or line.startswith(("+++", "---"))
+                    ):
+                        continue
+                    match = re.match(
+                        r"^[+-]\s*(?:async\s+)?(?:def|class)\s+([A-Za-z][A-Za-z0-9_]*)",
+                        line,
+                    )
+                    if match and not match.group(1).startswith("_"):
+                        raise ScopeViolationError("patch exceeds public-API-change permission")
+
+        if len(changed_paths) > scope.max_files:
+            raise ScopeViolationError(
+                f"patch exceeds file budget: {len(changed_paths)} > {scope.max_files}"
+            )
+        if changed_lines > scope.max_changed_lines:
+            raise ScopeViolationError(
+                f"patch exceeds changed-line budget: {changed_lines} > {scope.max_changed_lines}"
+            )
+
+    @staticmethod
+    def _changed_line_count(patch: str) -> int:
+        changed = 0
+        for line in patch.splitlines():
+            if line.startswith(("+++", "---")):
+                continue
+            if line.startswith(("+", "-")):
+                changed += 1
+        return changed
 
     def _parse_patch_paths(self, patch: str) -> tuple[str, ...]:
         if not isinstance(patch, str) or not patch.strip():

@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from .models import GitStatus, ProtectedTests, SubTask, Task, VerificationTarget
+from .models import ExpectedScope, GitStatus, ProtectedTests, SubTask, Task, VerificationTarget
 
 
 class CodingTools(Protocol):
@@ -18,10 +18,21 @@ class CodingTools(Protocol):
     def git_status(self) -> GitStatus: ...
     def patch_checkpoint(self) -> int: ...
     def changed_files_since(self, checkpoint: int) -> tuple[str, ...]: ...
-    def apply_test_patch(self, patch: str) -> VerificationTarget: ...
+    def apply_test_patch(
+        self,
+        patch: str,
+        scope: ExpectedScope | None = None,
+        checkpoint: int | None = None,
+    ) -> VerificationTarget: ...
     def discard_test_patch(self) -> None: ...
     def freeze_tests(self) -> ProtectedTests: ...
-    def apply_production_patch(self, patch: str, protected_tests: ProtectedTests) -> None: ...
+    def apply_production_patch(
+        self,
+        patch: str,
+        protected_tests: ProtectedTests,
+        scope: ExpectedScope | None = None,
+        checkpoint: int | None = None,
+    ) -> None: ...
 
 
 class ModelDriver(Protocol):

@@ -20,6 +20,10 @@ class VerificationFailureKind(str, Enum):
     OTHER = "other"
 
 
+class ScopeViolationError(PermissionError):
+    pass
+
+
 @dataclass(frozen=True)
 class ExpectedScope:
     max_files: int = 3
