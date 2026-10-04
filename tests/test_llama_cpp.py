@@ -161,6 +161,7 @@ def test_decomposition_review_requests_no_change_evidence_schema(repository):
         assert "evidence" in schema["required"]
         assert "test_target" in schema["required"]
         assert "existing tests" in request["messages"][1]["content"]
+        assert "missing implementation" in request["messages"][1]["content"]
     finally:
         server.close()
 
