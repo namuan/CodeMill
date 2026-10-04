@@ -75,6 +75,7 @@ def test_decompose_uses_openai_compatible_schema_constrained_request():
                             "allow_dependencies": False,
                             "allow_public_api": False,
                             "allow_schema_changes": False,
+                            "planned_paths": [],
                         },
                     }
                 ]
@@ -246,6 +247,7 @@ def test_retries_transient_server_errors():
                                 "allow_dependencies": False,
                                 "allow_public_api": False,
                                 "allow_schema_changes": False,
+                                "planned_paths": [],
                             },
                         }
                     ]

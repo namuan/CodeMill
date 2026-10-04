@@ -26,6 +26,7 @@ def valid_payload():
                     "allow_dependencies": False,
                     "allow_public_api": False,
                     "allow_schema_changes": False,
+                    "planned_paths": [],
                 },
             }
         ]
@@ -40,7 +41,7 @@ def test_parses_structured_decomposition_and_scope():
     assert subtasks[0].acceptance_criteria == (
         "the greeting endpoint returns the configured text",
     )
-    assert subtasks[0].expected_scope == ExpectedScope(2, 40, False, False, False)
+    assert subtasks[0].expected_scope == ExpectedScope(2, 40, False, False, False, ())
 
 
 def test_schema_requires_all_contract_fields():
@@ -77,6 +78,23 @@ def test_rejects_unknown_subtask_fields():
     payload["subtasks"][0]["implementation_notes"] = "add a helper"
 
     with pytest.raises(ValueError, match="unknown field: implementation_notes"):
+        parse_decomposition(json.dumps(payload))
+
+
+def test_validates_relative_planned_path_patterns():
+    payload = valid_payload()
+    payload["subtasks"][0]["expected_scope"]["planned_paths"] = ["src/**", "tests/*.py"]
+
+    subtask = parse_decomposition(json.dumps(payload))[0]
+
+    assert subtask.expected_scope.planned_paths == ("src/**", "tests/*.py")
+
+
+def test_rejects_escaping_planned_path_patterns():
+    payload = valid_payload()
+    payload["subtasks"][0]["expected_scope"]["planned_paths"] = ["../outside/**"]
+
+    with pytest.raises(ValueError, match="invalid repository path pattern"):
         parse_decomposition(json.dumps(payload))
 
 

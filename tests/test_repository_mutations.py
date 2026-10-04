@@ -64,6 +64,7 @@ def test_harness_completes_tdd_cycle_with_local_tools_and_pytest(tmp_path):
                                 "allow_dependencies": False,
                                 "allow_public_api": False,
                                 "allow_schema_changes": False,
+                                "planned_paths": [],
                             },
                         }
                     ]

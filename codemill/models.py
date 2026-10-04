@@ -31,6 +31,7 @@ class ExpectedScope:
     allow_dependencies: bool = False
     allow_public_api: bool = False
     allow_schema_changes: bool = False
+    planned_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -44,6 +44,10 @@ DECOMPOSITION_SCHEMA = {
                             "allow_dependencies": {"type": "boolean"},
                             "allow_public_api": {"type": "boolean"},
                             "allow_schema_changes": {"type": "boolean"},
+                            "planned_paths": {
+                                "type": "array",
+                                "items": {"type": "string", "minLength": 1},
+                            },
                         },
                         "required": [
                             "max_files",
@@ -51,6 +55,7 @@ DECOMPOSITION_SCHEMA = {
                             "allow_dependencies",
                             "allow_public_api",
                             "allow_schema_changes",
+                            "planned_paths",
                         ],
                         "additionalProperties": False,
                     },

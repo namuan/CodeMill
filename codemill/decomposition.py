@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from .models import DecompositionReview, ExpectedScope, SubTask
@@ -60,6 +61,7 @@ DECOMPOSITION_JSON_SCHEMA = {
                             "allow_dependencies",
                             "allow_public_api",
                             "allow_schema_changes",
+                            "planned_paths",
                         ],
                         "additionalProperties": False,
                         "properties": {
@@ -68,6 +70,10 @@ DECOMPOSITION_JSON_SCHEMA = {
                             "allow_dependencies": {"type": "boolean"},
                             "allow_public_api": {"type": "boolean"},
                             "allow_schema_changes": {"type": "boolean"},
+                            "planned_paths": {
+                                "type": "array",
+                                "items": {"type": "string", "minLength": 1},
+                            },
                         },
                     },
                 },
@@ -160,6 +166,7 @@ def _parse_scope(value: Any, path: str) -> ExpectedScope:
         "allow_dependencies",
         "allow_public_api",
         "allow_schema_changes",
+        "planned_paths",
     }
     _reject_unknown_fields(scope, fields, path)
 
@@ -182,6 +189,17 @@ def _parse_scope(value: Any, path: str) -> ExpectedScope:
     allow_schema_changes = _require_boolean(
         _require_field(scope, "allow_schema_changes", path), f"{path}.allow_schema_changes"
     )
+    planned_paths = _require_string_array(
+        _require_field(scope, "planned_paths", path), f"{path}.planned_paths"
+    )
+    for pattern in planned_paths:
+        if (
+            pattern.startswith("/")
+            or "\\" in pattern
+            or ".." in pattern.split("/")
+            or not re.fullmatch(r"[A-Za-z0-9._/*?-]+", pattern)
+        ):
+            raise ValueError(f"{path}.planned_paths contains an invalid repository path pattern")
 
     return ExpectedScope(
         max_files,
@@ -189,6 +207,7 @@ def _parse_scope(value: Any, path: str) -> ExpectedScope:
         allow_dependencies,
         allow_public_api,
         allow_schema_changes,
+        planned_paths,
     )
 
 

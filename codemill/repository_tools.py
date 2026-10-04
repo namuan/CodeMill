@@ -1,4 +1,5 @@
 import ast
+import fnmatch
 import hashlib
 import json
 import re
@@ -557,6 +558,10 @@ class LocalRepositoryTools:
             changed_paths.update(paths)
             changed_lines += self._changed_line_count(candidate)
             for path in paths:
+                if scope.planned_paths and not any(
+                    fnmatch.fnmatchcase(path, pattern) for pattern in scope.planned_paths
+                ):
+                    raise ScopeViolationError(f"patch path is outside planned scope: {path}")
                 lowered = path.casefold()
                 filename = Path(path).name.casefold()
                 if not scope.allow_dependencies and (

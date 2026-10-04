@@ -7,6 +7,7 @@ from codemill.harness import CodingHarness
 from codemill.models import (
     ExpectedScope,
     RunStatus,
+    ScopeViolationError,
     Task,
     VerificationFailureKind,
     VerificationPurpose,
@@ -114,6 +115,7 @@ def test_harness_escalates_when_slices_exceed_task_budget(tmp_path):
                             "allow_dependencies": False,
                             "allow_public_api": False,
                             "allow_schema_changes": False,
+                            "planned_paths": [],
                         },
                     }
                 )
@@ -179,6 +181,36 @@ index 0000000..0000000 100644
         "patch exceeds changed-line budget: 4 > 3",
     )
     assert not (tmp_path / "tests" / "test_second.py").exists()
+
+
+def test_rejects_patch_outside_planned_paths(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    checkpoint = tools.patch_checkpoint()
+    scope = ExpectedScope(planned_paths=("src/**", "tests/**"))
+    test_patch = """diff --git a/tests/test_scope.py b/tests/test_scope.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_scope.py
+@@ -0,0 +1 @@
++def test_scope(): pass
+"""
+    tools.apply_test_patch(test_patch, scope, checkpoint)
+    protected = tools.freeze_tests()
+    out_of_scope = """diff --git a/docs/README.md b/docs/README.md
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/docs/README.md
+@@ -0,0 +1 @@
++unrelated change
+"""
+
+    with pytest.raises(ScopeViolationError, match="outside planned scope"):
+        tools.apply_production_patch(out_of_scope, protected, scope, checkpoint)
+
+    assert not (tmp_path / "docs" / "README.md").exists()
 
 
 def test_rejects_public_api_change_when_scope_disallows_it(tmp_path):

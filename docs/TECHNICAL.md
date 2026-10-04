@@ -454,11 +454,12 @@ Enforce budgets both per sub-task and cumulatively:
   "max_changed_lines": 100,
   "allow_dependencies": false,
   "allow_public_api": false,
-  "allow_schema_changes": false
+  "allow_schema_changes": false,
+  "planned_paths": ["src/**", "tests/**"]
 }
 ```
 
-Hard violations reject or escalate. `Task.expected_scope` enforces a run-wide file and changed-line ceiling; each `SubTask.expected_scope` applies an additional slice-local ceiling. The local patch tool applies slice budgets cumulatively across its test, implementation, and repair patches, and checks the task-wide budget across all patches in the run before applying each candidate diff. It also rejects dependency-manifest, schema/migration, and public top-level definition changes unless the corresponding expected-scope permission is enabled. These checks are conservative path/diff heuristics, not semantic API analysis; violations escalate before candidate mutation. Binary and symlink patches remain denied. Common secret-bearing paths are denied for reads and patches and excluded from rg/ast-grep retrieval. Planned-scope intersection checks remain future hardening.
+Hard violations reject or escalate. `Task.expected_scope` enforces a run-wide file and changed-line ceiling; each `SubTask.expected_scope` applies an additional slice-local ceiling. The local patch tool applies slice budgets cumulatively across its test, implementation, and repair patches, and checks the task-wide budget across all patches in the run before applying each candidate diff. It also rejects dependency-manifest, schema/migration, and public top-level definition changes unless the corresponding expected-scope permission is enabled. These checks are conservative path/diff heuristics, not semantic API analysis; violations escalate before candidate mutation. Binary and symlink patches remain denied. Common secret-bearing paths are denied for reads and patches and excluded from rg/ast-grep retrieval. When planned path patterns are present, every changed path must match one of them; empty patterns leave path intersection unrestricted.
 
 ## 10. Harness-enforced TDD
 
