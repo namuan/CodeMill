@@ -86,6 +86,17 @@ class VerificationResult:
 
 
 @dataclass(frozen=True)
+class InferenceMetrics:
+    operation: str
+    duration_seconds: float
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    succeeded: bool = True
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class RunEvent:
     run_id: str
     name: str

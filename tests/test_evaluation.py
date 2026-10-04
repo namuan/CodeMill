@@ -1,5 +1,6 @@
 from codemill.evaluation import EvaluationSummary, RunMetrics
 from codemill.models import (
+    InferenceMetrics,
     RunEvent,
     RunResult,
     RunStatus,
@@ -50,6 +51,28 @@ def test_measures_harness_outcomes_without_hidden_model_reasoning():
     assert metrics.repairs == 1
     assert metrics.scope_violations == 0
     assert metrics.changed_files == ("src/greeting.py", "tests/test_greeting.py")
+
+
+def test_aggregates_token_and_inference_time_metrics():
+    run = RunResult(RunStatus.VERIFIED, 1, "run-usage")
+    metrics = RunMetrics.from_result(
+        run,
+        (
+            InferenceMetrics("decompose", 1.25, 100, 20, 120),
+            InferenceMetrics("locate", 0.75, 80, 10, 90),
+        ),
+    )
+
+    assert metrics.model_calls == 2
+    assert metrics.prompt_tokens == 180
+    assert metrics.completion_tokens == 30
+    assert metrics.total_tokens == 210
+    assert metrics.inference_seconds == 2.0
+
+    summary = EvaluationSummary.from_metrics((metrics,))
+
+    assert summary.total_tokens == 210
+    assert summary.inference_seconds == 2.0
 
 
 def test_aggregates_success_escalation_and_repair_metrics():

@@ -58,6 +58,38 @@ def repository(tmp_path):
     return LocalRepositoryTools(tmp_path)
 
 
+def test_records_model_usage_and_latency():
+    server = ResponseServer(
+        [
+            (
+                200,
+                {
+                    "choices": [{"message": {"content": json.dumps({"text": "ok"})}}],
+                    "usage": {
+                        "prompt_tokens": 17,
+                        "completion_tokens": 4,
+                        "total_tokens": 21,
+                    },
+                },
+            )
+        ]
+    )
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        driver._complete("locate", {"task": "test"}, {"type": "object"})
+
+        call = driver.calls[0]
+        assert call.operation == "locate"
+        assert call.prompt_tokens == 17
+        assert call.completion_tokens == 4
+        assert call.total_tokens == 21
+        assert call.duration_seconds >= 0
+        assert call.succeeded
+    finally:
+        server.close()
+
+
 def test_decompose_uses_openai_compatible_schema_constrained_request():
     server = ResponseServer(
         [response(
@@ -284,5 +316,7 @@ def test_reports_malformed_model_response():
 
         with pytest.raises(LlamaServerError, match="malformed completion response"):
             driver.decompose(Task("task"), repository_tools())
+        assert len(driver.calls) == 1
+        assert not driver.calls[0].succeeded
     finally:
         server.close()

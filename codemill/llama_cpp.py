@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .context import ContextBuilder, summarize_repository
-from .models import SubTask, Task, VerificationTarget
+from .models import InferenceMetrics, SubTask, Task, VerificationTarget
 from .tools import CodingTools
 
 
@@ -124,6 +124,7 @@ class LlamaCppModelDriver:
         self.timeout = timeout
         self.retries = retries
         self.max_tokens = max_tokens
+        self.calls: list[InferenceMetrics] = []
 
     def decompose(self, task: Task, tools: CodingTools) -> str:
         result = self._complete(
@@ -275,7 +276,46 @@ class LlamaCppModelDriver:
         )
         return result["patch"]
 
-    def _complete(self, operation: str, payload: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    def _complete(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        started = time.monotonic()
+        try:
+            result, prompt_tokens, completion_tokens, total_tokens = self._request(
+                operation,
+                payload,
+                schema,
+            )
+        except Exception as error:
+            self.calls.append(
+                InferenceMetrics(
+                    operation,
+                    time.monotonic() - started,
+                    succeeded=False,
+                    error=f"{type(error).__name__}: {error}",
+                )
+            )
+            raise
+        self.calls.append(
+            InferenceMetrics(
+                operation,
+                time.monotonic() - started,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+            )
+        )
+        return result
+
+    def _request(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+        schema: dict[str, Any],
+    ) -> tuple[dict[str, Any], int | None, int | None, int | None]:
         body = json.dumps(
             {
                 "model": self.model,
@@ -329,7 +369,9 @@ class LlamaCppModelDriver:
         raise LlamaServerError("llama-server request exhausted retries")
 
     @staticmethod
-    def _parse_completion(response_body: str) -> dict[str, Any]:
+    def _parse_completion(
+        response_body: str,
+    ) -> tuple[dict[str, Any], int | None, int | None, int | None]:
         try:
             response = json.loads(response_body)
             message = response["choices"][0]["message"]
@@ -342,8 +384,24 @@ class LlamaCppModelDriver:
             parsed = json.loads(content)
             if not isinstance(parsed, dict):
                 raise ValueError("completion content is not a JSON object")
-            return parsed
+            usage = response.get("usage", {})
+            if not isinstance(usage, dict):
+                usage = {}
+            prompt_tokens = LlamaCppModelDriver._valid_token_count(usage.get("prompt_tokens"))
+            completion_tokens = LlamaCppModelDriver._valid_token_count(
+                usage.get("completion_tokens")
+            )
+            total_tokens = LlamaCppModelDriver._valid_token_count(usage.get("total_tokens"))
+            if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+                total_tokens = prompt_tokens + completion_tokens
+            return parsed, prompt_tokens, completion_tokens, total_tokens
         except LlamaServerError:
             raise
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise LlamaServerError("malformed completion response") from error
+
+    @staticmethod
+    def _valid_token_count(value: Any) -> int | None:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value

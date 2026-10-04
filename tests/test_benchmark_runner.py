@@ -1,11 +1,12 @@
 import json
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
 from codemill.benchmark import load_benchmark_cases
 from codemill.evaluation import BenchmarkRunner, BenchmarkRunnerError
-from codemill.models import RunResult, RunStatus
+from codemill.models import InferenceMetrics, RunResult, RunStatus
 from codemill.repository_tools import LocalRepositoryTools
 
 
@@ -50,9 +51,11 @@ class Harness:
         self.tools = LocalRepositoryTools(root)
         self.result = result
         self.task = None
+        self.model = SimpleNamespace(calls=[])
 
     def run(self, task):
         self.task = task
+        self.model.calls.append(InferenceMetrics("decompose", 0.5, 10, 2, 12))
         (self.tools.root / "sample.py").write_text("value = 2\n")
         return self.result
 
@@ -76,6 +79,8 @@ def test_runner_uses_and_removes_a_disposable_worktree(tmp_path):
     assert benchmark_run.case_id == "case-1"
     assert benchmark_run.result is result
     assert benchmark_run.metrics.verified_subtasks == 0
+    assert benchmark_run.metrics.total_tokens == 12
+    assert benchmark_run.metrics.inference_seconds == 0.5
     assert observed_worktrees[0] != repository
     assert not observed_worktrees[0].exists()
     assert (repository / "sample.py").read_text() == "value = 1\n"

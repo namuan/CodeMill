@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from .benchmark import BenchmarkCase, BenchmarkDatasetError, verify_benchmark_checkout
-from .models import RunResult, RunStatus
+from .models import InferenceMetrics, RunResult, RunStatus
 
 
 class BenchmarkRunnerError(RuntimeError):
@@ -59,10 +59,14 @@ class BenchmarkRunner:
                 tools_root = getattr(getattr(harness, "tools", None), "root", None)
                 if tools_root is None or Path(tools_root).resolve() != worktree.resolve():
                     raise BenchmarkRunnerError("harness must target the disposable worktree")
+                model = getattr(harness, "model", None)
+                calls = getattr(model, "calls", ())
+                calls_before = len(calls)
                 result = harness.run(case.task)
                 if not isinstance(result, RunResult):
                     raise BenchmarkRunnerError("harness must return a RunResult")
-                metrics = RunMetrics.from_result(result)
+                model_calls = tuple(getattr(model, "calls", ())[calls_before:])
+                metrics = RunMetrics.from_result(result, model_calls)
                 return BenchmarkRun(case.id, case.base_revision, result, metrics)
             finally:
                 removal = self._git_result(
@@ -108,9 +112,19 @@ class RunMetrics:
     repairs: int
     scope_violations: int
     changed_files: tuple[str, ...]
+    model_calls: int
+    failed_model_calls: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    inference_seconds: float
 
     @classmethod
-    def from_result(cls, result: RunResult) -> RunMetrics:
+    def from_result(
+        cls,
+        result: RunResult,
+        model_calls: tuple[InferenceMetrics, ...] = (),
+    ) -> RunMetrics:
         event_names = tuple(event.name for event in result.events)
         changed_files = {
             path
@@ -127,7 +141,19 @@ class RunMetrics:
             event_names.count("repair_started"),
             event_names.count("scope_violation"),
             tuple(sorted(changed_files)),
+            len(model_calls),
+            sum(not call.succeeded for call in model_calls),
+            cls._sum_tokens(model_calls, "prompt_tokens"),
+            cls._sum_tokens(model_calls, "completion_tokens"),
+            cls._sum_tokens(model_calls, "total_tokens"),
+            sum(call.duration_seconds for call in model_calls),
         )
+
+    @staticmethod
+    def _sum_tokens(calls: tuple[InferenceMetrics, ...], field: str) -> int | None:
+        if not calls or any(getattr(call, field) is None for call in calls):
+            return None
+        return sum(getattr(call, field) for call in calls)
 
 
 @dataclass(frozen=True)
@@ -137,6 +163,11 @@ class EvaluationSummary:
     escalated_runs: int
     failed_runs: int
     repair_attempts: int
+    model_calls: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    inference_seconds: float = 0.0
 
     @property
     def success_rate(self) -> float:
@@ -147,10 +178,25 @@ class EvaluationSummary:
     @classmethod
     def from_results(cls, results: tuple[RunResult, ...]) -> EvaluationSummary:
         metrics = tuple(RunMetrics.from_result(result) for result in results)
+        return cls.from_metrics(metrics)
+
+    @classmethod
+    def from_metrics(cls, metrics: tuple[RunMetrics, ...]) -> EvaluationSummary:
         return cls(
             len(metrics),
             sum(metric.status is RunStatus.VERIFIED for metric in metrics),
             sum(metric.status is RunStatus.ESCALATED for metric in metrics),
             sum(metric.status is RunStatus.FAILED for metric in metrics),
             sum(metric.repairs for metric in metrics),
+            sum(metric.model_calls for metric in metrics),
+            cls._sum_metric_tokens(metrics, "prompt_tokens"),
+            cls._sum_metric_tokens(metrics, "completion_tokens"),
+            cls._sum_metric_tokens(metrics, "total_tokens"),
+            sum(metric.inference_seconds for metric in metrics),
         )
+
+    @staticmethod
+    def _sum_metric_tokens(metrics: tuple[RunMetrics, ...], field: str) -> int | None:
+        if not metrics or any(getattr(metric, field) is None for metric in metrics):
+            return None
+        return sum(getattr(metric, field) for metric in metrics)
