@@ -99,7 +99,7 @@ def test_runner_rejects_a_harness_pointing_at_the_source_repository(tmp_path):
     assert LocalRepositoryTools(repository).git_status().clean
 
 
-def test_runner_rechecks_base_revision_before_creating_worktree(tmp_path):
+def test_runner_checks_out_historical_base_revision(tmp_path):
     repository = tmp_path / "fixture"
     revision = create_repository(repository)
     case = load_case(tmp_path, "fixture", revision)
@@ -107,5 +107,14 @@ def test_runner_rechecks_base_revision_before_creating_worktree(tmp_path):
     subprocess.run(["git", "-C", str(repository), "add", "sample.py"], check=True)
     subprocess.run(["git", "-C", str(repository), "commit", "-qm", "advance"], check=True)
 
-    with pytest.raises(BenchmarkRunnerError, match="does not match base_revision"):
-        BenchmarkRunner(lambda current_case, worktree: None).run_case(case)
+    def harness_factory(current_case, worktree):
+        harness = Harness(worktree, RunResult(RunStatus.VERIFIED, 1, "historical"))
+        assert harness.tools.git_status().commit == revision
+        assert (worktree / "sample.py").read_text() == "value = 1\n"
+        return harness
+
+    benchmark_run = BenchmarkRunner(harness_factory).run_case(case)
+
+    assert benchmark_run.result.status is RunStatus.VERIFIED
+    assert (repository / "sample.py").read_text() == "value = 3\n"
+    assert LocalRepositoryTools(repository).git_status().clean

@@ -55,6 +55,9 @@ class BenchmarkRunner:
             self._git(case.repository, "worktree", "add", "--detach", str(worktree), case.base_revision)
             try:
                 verify_benchmark_checkout(worktree, case.base_revision)
+                checkout = self._git_result(worktree, "rev-parse", "HEAD")
+                if checkout.returncode != 0 or checkout.stdout.strip().lower() != case.base_revision.lower():
+                    raise BenchmarkRunnerError("disposable worktree is not at base_revision")
                 harness = self.harness_factory(case, worktree)
                 tools_root = getattr(getattr(harness, "tools", None), "root", None)
                 if tools_root is None or Path(tools_root).resolve() != worktree.resolve():

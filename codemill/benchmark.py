@@ -85,16 +85,14 @@ def verify_benchmark_checkout(repository: Path, revision: str) -> None:
     git_path = shutil.which("git")
     if git_path is None:
         raise BenchmarkDatasetError("git executable is required to validate benchmark repositories")
-    head = subprocess.run(
-        [git_path, "-C", str(repository), "rev-parse", "HEAD"],
+    base = subprocess.run(
+        [git_path, "-C", str(repository), "cat-file", "-e", f"{revision}^{{commit}}"],
         check=False,
         capture_output=True,
         text=True,
     )
-    if head.returncode != 0:
-        raise BenchmarkDatasetError("benchmark repository is not a Git worktree")
-    if head.stdout.strip().lower() != revision.lower():
-        raise BenchmarkDatasetError("benchmark repository HEAD does not match base_revision")
+    if base.returncode != 0:
+        raise BenchmarkDatasetError("benchmark base_revision is unavailable in repository")
     status = subprocess.run(
         [git_path, "-C", str(repository), "status", "--porcelain", "--untracked-files=all"],
         check=False,

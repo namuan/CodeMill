@@ -72,12 +72,26 @@ def test_rejects_repository_path_traversal(tmp_path):
         load_benchmark_cases(dataset)
 
 
-def test_rejects_repository_at_a_different_base_revision(tmp_path):
-    revision = create_repository(tmp_path / "fixture")
+def test_accepts_historical_base_revision_in_a_clean_repository(tmp_path):
+    repository = tmp_path / "fixture"
+    revision = create_repository(repository)
+    (repository / "sample.py").write_text("value = 2\n")
+    subprocess.run(["git", "-C", str(repository), "add", "sample.py"], check=True)
+    subprocess.run(["git", "-C", str(repository), "commit", "-qm", "advance"], check=True)
+    dataset = tmp_path / "cases.jsonl"
+    write_case_file(dataset, [case_record("historical", "fixture", revision)])
+
+    cases = load_benchmark_cases(dataset)
+
+    assert cases[0].base_revision == revision
+
+
+def test_rejects_unavailable_base_revision(tmp_path):
+    create_repository(tmp_path / "fixture")
     dataset = tmp_path / "cases.jsonl"
     write_case_file(dataset, [case_record("wrong-base", "fixture", "0" * 40)])
 
-    with pytest.raises(BenchmarkDatasetError, match="does not match base_revision"):
+    with pytest.raises(BenchmarkDatasetError, match="base_revision is unavailable"):
         load_benchmark_cases(dataset)
 
 
