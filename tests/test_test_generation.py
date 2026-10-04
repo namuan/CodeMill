@@ -23,6 +23,21 @@ def test_adds_requested_api_guards_and_missing_pytest_import():
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 
 
+def test_replaces_nonliteral_messages_on_requested_api_guards():
+    task = SubTask("ST-001", "Implement LocalRepositoryTools.git_status()")
+    source = (
+        "def test_status():\n"
+        "    tools = LocalRepositoryTools('repo')\n"
+        "    assert callable(getattr(tools, 'git_status', None)), LocalRepositoryTools.git_status is missing\n"
+        "    tools.git_status()\n"
+    )
+
+    prepared, guarded_symbols = prepare_test_module(source, task)
+
+    assert "assert callable(getattr(tools, 'git_status', None)), 'LocalRepositoryTools.git_status is missing'" in prepared
+    assert guarded_symbols == ("LocalRepositoryTools.git_status",)
+
+
 def test_does_not_inject_guards_for_unmentioned_methods():
     task = SubTask("ST-001", "Implement LocalRepositoryTools.git_status()")
     source = "def test_status():\n    assert True\n"

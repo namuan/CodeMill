@@ -16,6 +16,8 @@ def prepare_test_module(source: str, task: SubTask) -> tuple[str, tuple[str, ...
     requested_methods = tuple(
         dict.fromkeys(re.findall(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text))
     )
+    source = _normalize_guard_messages(source, module, requested_methods)
+    module = ast.parse(source)
     source_lines = source.splitlines(keepends=True)
     if source_lines and not source_lines[-1].endswith(("\n", "\r")):
         source_lines[-1] += "\n"
@@ -137,6 +139,52 @@ def _new_test_path(subtask_id: str, tools: CodingTools) -> str:
         if path not in existing:
             return path
         suffix += 1
+
+
+def _normalize_guard_messages(
+    source: str,
+    module: ast.Module,
+    requested_methods: tuple[tuple[str, str], ...],
+) -> str:
+    owners = {method: class_name for class_name, method in requested_methods}
+    replacements = []
+    for node in ast.walk(module):
+        if not isinstance(node, ast.Assert) or node.msg is None:
+            continue
+        method = _assert_guard_method(node.test)
+        if method not in owners or (
+            isinstance(node.msg, ast.Constant) and isinstance(node.msg.value, str)
+        ):
+            continue
+        start = _source_offset(source, node.msg.lineno, node.msg.col_offset)
+        end = _source_offset(source, node.msg.end_lineno, node.msg.end_col_offset)
+        replacements.append((start, end, repr(f"{owners[method]}.{method} is missing")))
+    for start, end, replacement in sorted(replacements, reverse=True):
+        source = source[:start] + replacement + source[end:]
+    return source
+
+
+def _assert_guard_method(node: ast.AST) -> str | None:
+    for call in ast.walk(node):
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
+            continue
+        if call.func.id != "callable" or not call.args:
+            continue
+        lookup = call.args[0]
+        if (
+            isinstance(lookup, ast.Call)
+            and isinstance(lookup.func, ast.Name)
+            and lookup.func.id == "getattr"
+            and len(lookup.args) > 1
+            and isinstance(lookup.args[1], ast.Constant)
+            and isinstance(lookup.args[1].value, str)
+        ):
+            return lookup.args[1].value
+    return None
+
+
+def _source_offset(source: str, line: int, column: int) -> int:
+    return sum(len(content) for content in source.splitlines(keepends=True)[: line - 1]) + column
 
 
 def _pytest_import_line(module: ast.Module) -> int:
