@@ -256,6 +256,37 @@ def test_retries_focused_test_after_preexisting_test_is_protected():
     assert "test_patch_rejected" in [event.name for event in result.events]
 
 
+def test_repairs_production_patch_that_fails_git_apply_check():
+    class ApplyRetryTools(FakeTools):
+        def __init__(self):
+            super().__init__()
+            self.production_calls = 0
+
+        def apply_production_patch(self, patch, protected_tests, *scope_args):
+            self.production_calls += 1
+            if self.production_calls == 1:
+                raise RuntimeError("error: patch failed: src/feature.py:1\nerror: patch does not apply")
+            return super().apply_production_patch(patch, protected_tests, *scope_args)
+
+    tools = ApplyRetryTools()
+    verifier = SequenceVerifier(
+        [
+            VerificationResult(False, ("behavior absent",), VerificationFailureKind.EXPECTED_BEHAVIOR),
+            VerificationResult(True),
+            VerificationResult(True),
+            VerificationResult(True),
+        ]
+    )
+
+    result = CodingHarness(FakeModel(), tools, verifier).run(Task("fix bug"))
+
+    assert result.status is RunStatus.VERIFIED
+    assert tools.production_calls == 2
+    assert "implementation_patch_rejected" in [event.name for event in result.events]
+    assert "repair_started" in [event.name for event in result.events]
+    assert "repair_patch_applied" in [event.name for event in result.events]
+
+
 def test_revises_test_module_after_invalid_red_and_retries_before_implementation():
     class ModuleTools(FakeTools):
         def list_tree(self, path=".", depth=2):

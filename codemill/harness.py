@@ -322,16 +322,45 @@ class CodingHarness:
                 test_target,
                 red.diagnostics,
             )
-            attempts += 1
-            self.tools.apply_production_patch(
-                patch,
-                protected_tests,
-                task.expected_scope,
-                checkpoint,
-                task_scope,
-                task_checkpoint,
-            )
-            events.append(self._event(run_id, "patch_applied", task.id))
+            patch_repair_attempts = 0
+            while True:
+                attempts += 1
+                try:
+                    self.tools.apply_production_patch(
+                        patch,
+                        protected_tests,
+                        task.expected_scope,
+                        checkpoint,
+                        task_scope,
+                        task_checkpoint,
+                    )
+                except RuntimeError as error:
+                    if (
+                        not self._is_patch_application_failure(error)
+                        or patch_repair_attempts >= self.max_repairs
+                    ):
+                        raise
+                    diagnostics = (str(error),)
+                    events.append(
+                        self._event(run_id, "implementation_patch_rejected", task.id, diagnostics)
+                    )
+                    events.append(self._event(run_id, "repair_started", task.id, diagnostics))
+                    patch = self.model.repair_patch(
+                        task,
+                        diagnostics,
+                        self.tools,
+                        test_target,
+                    )
+                    patch_repair_attempts += 1
+                    continue
+                events.append(
+                    self._event(
+                        run_id,
+                        "repair_patch_applied" if patch_repair_attempts else "patch_applied",
+                        task.id,
+                    )
+                )
+                break
 
             while True:
                 events.append(self._event(run_id, "green_verify_started", task.id))
@@ -656,6 +685,20 @@ class CodingHarness:
             )
             red_revisions += 1
             events.append(self._event(run_id, "test_module_revised", task.id))
+
+    @staticmethod
+    def _is_patch_application_failure(error: RuntimeError) -> bool:
+        message = str(error).casefold()
+        return any(
+            marker in message
+            for marker in (
+                "patch does not apply",
+                "patch validation failed",
+                "patch application failed",
+                "corrupt patch",
+                "no valid patches",
+            )
+        )
 
     @staticmethod
     def _event(
