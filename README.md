@@ -88,7 +88,7 @@ tests/
 
 ## Status
 
-CodeMill is at **v0 / bootstrap**. The current core models decomposition, dependency-ordered sub-task execution, bounded repair loops, and final verification. The next milestone is encoding the vertical-slice and RED/GREEN/minimality invariants directly in the harness.
+CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. The CLI refuses dirty repositories and emits a JSON run result. Persistent artifact bundles and a complete real-model end-to-end run remain outstanding.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
@@ -101,7 +101,14 @@ Requires Python 3.11+, uv, ast-grep, ripgrep, and a locally running llama.cpp `l
 ```bash
 uv sync
 uv run pytest
+uv run codemill \\
+  --repository /path/to/clean/repository \\
+  --task "Add a greeting helper" \\
+  --acceptance-criterion "greeting('Ada') returns 'Hello, Ada!'" \\
+  --constraint "Use the standard library"
 ```
+
+Repeat `--acceptance-criterion` and `--constraint` to provide multiple values. The CLI records the starting Git revision/status in its JSON output and refuses to run when the repository is dirty; commit, stash, or discard existing changes first. Results are currently printed to stdout rather than persisted as an artifact bundle.
 
 Add dependencies with `uv add <package>` and development dependencies with `uv add --dev <package>`. Commit `uv.lock` so development and CI resolve the same dependency set.
 
