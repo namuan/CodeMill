@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -131,6 +132,39 @@ def test_writes_complete_reviewable_run_bundle(tmp_path):
     assert "Implement greeting" in (run_directory / "result.md").read_text()
     assert (run_directory / "final.diff").read_text().startswith("diff --git")
     assert (run_directory / "manifest.json").exists()
+
+
+def test_persists_no_change_verification_and_outcome(tmp_path):
+    task, result = verified_result("already-satisfied")
+    target = VerificationTarget(("tests/test_greeting.py",), ("test_greeting",))
+    result = replace(
+        result,
+        pre_final_verifications=(
+            VerificationRecord(
+                VerificationPurpose.NO_CHANGE,
+                target,
+                VerificationResult(
+                    True,
+                    ("existing acceptance test passed",),
+                    command=("python", "-B", "-m", "pytest", "tests/test_greeting.py::test_greeting"),
+                    exit_code=0,
+                    duration_seconds=0.2,
+                ),
+            ),
+        ),
+    )
+
+    run_directory = ArtifactWriter(tmp_path).write(
+        task,
+        result,
+        GitStatus("base-sha", "main", True, ()),
+        GitStatus("base-sha", "main", True, ()),
+        "",
+    )
+
+    verification = json.loads((run_directory / "verification.json").read_text())
+    assert verification["records"][0]["purpose"] == "no_change"
+    assert "Already satisfied" in (run_directory / "result.md").read_text()
 
 
 def test_refuses_to_overwrite_existing_run_bundle(tmp_path):

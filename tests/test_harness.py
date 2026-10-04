@@ -171,6 +171,63 @@ def test_repairs_subtask_then_runs_final_verification():
     )
 
 
+def test_verifies_already_satisfied_task_without_mutation():
+    class SatisfiedModel(FakeModel):
+        def decompose(self, task, tools):
+            return '{"subtasks": []}'
+
+        def review_decomposition(self, task, subtasks, tools):
+            return json.dumps(
+                {
+                    "accepted": True,
+                    "findings": [],
+                    "already_satisfied": True,
+                    "evidence": ["tests/test_feature.py::test_feature covers the criterion"],
+                    "test_target": {
+                        "paths": ["tests/test_feature.py"],
+                        "selectors": ["test_feature"],
+                    },
+                }
+            )
+
+    tools = FakeTools()
+    verifier = SequenceVerifier([VerificationResult(True), VerificationResult(True)])
+
+    result = CodingHarness(SatisfiedModel(), tools, verifier).run(
+        Task("feature is already implemented", ("feature behavior works",))
+    )
+
+    assert result.status is RunStatus.VERIFIED
+    assert result.subtasks == ()
+    assert tools.patches == []
+    assert verifier.purposes == [VerificationPurpose.NO_CHANGE, VerificationPurpose.FINAL]
+    assert verifier.targets[0] == (
+        VerificationPurpose.NO_CHANGE,
+        VerificationTarget(("tests/test_feature.py",), ("test_feature",)),
+    )
+    assert tuple(record.purpose for record in result.verifications) == (
+        VerificationPurpose.NO_CHANGE,
+        VerificationPurpose.FINAL,
+    )
+    assert "no_change_verified" in [event.name for event in result.events]
+
+
+def test_refuses_empty_plan_without_no_change_evidence():
+    class EmptyPlanModel(FakeModel):
+        def decompose(self, task, tools):
+            return '{"subtasks": []}'
+
+    verifier = SequenceVerifier([])
+
+    result = CodingHarness(EmptyPlanModel(), FakeTools(), verifier).run(Task("feature"))
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.diagnostics == (
+        "empty plan requires an already-satisfied review with test evidence",
+    )
+    assert verifier.purposes == []
+
+
 def test_freezes_red_test_before_production_patches():
     tools = FakeTools()
     verifier = SequenceVerifier([

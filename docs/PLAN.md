@@ -121,6 +121,7 @@ Separate verification purposes:
 - **RED verification:** prove the new behavioral test fails for the intended missing behavior.
 - **GREEN verification:** prove the minimal implementation satisfies that focused test.
 - **Regression verification:** prove previously verified behavior still passes.
+- **No-change verification:** run the review-selected existing acceptance tests when the plan is empty because behavior is already satisfied.
 - **Final verification:** prove all slices compose to satisfy the original task.
 
 Normalize failures before returning them to REPAIR.

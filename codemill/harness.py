@@ -102,10 +102,80 @@ class CodingHarness:
                 planned_subtasks=tuple(subtasks),
             )
 
+        if review.already_satisfied and subtasks:
+            diagnostics = ("already-satisfied review cannot include implementation subtasks",)
+            events.append(
+                self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
+            )
+            events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+            return RunResult(
+                RunStatus.ESCALATED,
+                0,
+                run_id,
+                diagnostics,
+                tuple(events),
+                planned_subtasks=tuple(subtasks),
+            )
+        if not subtasks and not review.already_satisfied:
+            diagnostics = ("empty plan requires an already-satisfied review with test evidence",)
+            events.append(
+                self._event(run_id, "decomposition_review_rejected", diagnostics=diagnostics)
+            )
+            events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+            return RunResult(RunStatus.ESCALATED, 0, run_id, diagnostics, tuple(events))
+
         events.append(self._event(run_id, "decomposition_review_accepted"))
         events.append(self._event(run_id, "plan_validated"))
         results: list[SubTaskResult] = []
+        pre_final_verifications: list[VerificationRecord] = []
         attempts = 0
+
+        if review.already_satisfied:
+            events.append(
+                self._event(run_id, "no_change_review_accepted", diagnostics=review.evidence)
+            )
+            events.append(self._event(run_id, "no_change_verify_started"))
+            try:
+                no_change = self.verifier.verify(
+                    VerificationPurpose.NO_CHANGE,
+                    review.test_target,
+                )
+            except Exception as error:
+                diagnostics = self._exception_diagnostic(error)
+                events.append(self._event(run_id, "no_change_verify_failed", diagnostics=diagnostics))
+                events.append(self._event(run_id, "run_failed", diagnostics=diagnostics))
+                return RunResult(
+                    RunStatus.FAILED,
+                    0,
+                    run_id,
+                    diagnostics,
+                    tuple(events),
+                    planned_subtasks=tuple(subtasks),
+                )
+            no_change_record = VerificationRecord(
+                VerificationPurpose.NO_CHANGE,
+                review.test_target,
+                no_change,
+            )
+            pre_final_verifications.append(no_change_record)
+            if not no_change.ok:
+                diagnostics = no_change.diagnostics or (
+                    "existing tests did not verify the already-satisfied task",
+                )
+                events.append(
+                    self._event(run_id, "no_change_verify_failed", diagnostics=diagnostics)
+                )
+                events.append(self._event(run_id, "run_escalated", diagnostics=diagnostics))
+                return RunResult(
+                    RunStatus.ESCALATED,
+                    0,
+                    run_id,
+                    diagnostics,
+                    tuple(events),
+                    planned_subtasks=tuple(subtasks),
+                    pre_final_verifications=tuple(pre_final_verifications),
+                )
+            events.append(self._event(run_id, "no_change_verified", diagnostics=review.evidence))
 
         for subtask in subtasks:
             result = self._run_subtask(
@@ -156,6 +226,7 @@ class CodingHarness:
                 tuple(events),
                 tuple(results),
                 tuple(subtasks),
+                pre_final_verifications=tuple(pre_final_verifications),
             )
 
         final_record = VerificationRecord(VerificationPurpose.FINAL, None, final)
@@ -173,6 +244,7 @@ class CodingHarness:
                 tuple(results),
                 tuple(subtasks),
                 final_record,
+                tuple(pre_final_verifications),
             )
 
         events.append(self._event(run_id, "final_verify_passed"))
@@ -186,6 +258,7 @@ class CodingHarness:
             tuple(results),
             tuple(subtasks),
             final_record,
+            tuple(pre_final_verifications),
         )
 
     def _run_subtask(

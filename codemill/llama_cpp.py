@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .context import ContextBuilder, summarize_repository
+from .decomposition import DECOMPOSITION_REVIEW_JSON_SCHEMA
 from .models import InferenceMetrics, SubTask, Task, VerificationTarget
 from .tools import CodingTools
 
@@ -17,7 +18,7 @@ DECOMPOSITION_SCHEMA = {
     "properties": {
         "subtasks": {
             "type": "array",
-            "minItems": 1,
+            "minItems": 0,
             "items": {
                 "type": "object",
                 "properties": {
@@ -133,7 +134,10 @@ class LlamaCppModelDriver:
                 "task": asdict(task),
                 "repository_context": summarize_repository(tools).render(),
                 "instructions": (
-                    "Create the smallest independently verifiable vertical slices. Give every "
+                    "Create the smallest independently verifiable vertical slices for behavior "
+                    "that is not already satisfied. Return an empty subtasks array only if the "
+                    "task is already satisfied; the independent review will require evidence and "
+                    "a runnable existing test target before accepting that decision. Give every "
                     "slice a non-empty stable ID such as ST-001 and a non-empty objective. "
                     "Include at least one observable acceptance criterion, constraints, only "
                     "necessary dependencies, and a conservative expected scope. Set scope "
@@ -158,10 +162,14 @@ class LlamaCppModelDriver:
                 "repository_context": summarize_repository(tools).render(),
                 "instructions": (
                     "Reject layer-oriented or bundled slices that are not minimal, "
-                    "independently observable, or meaningfully verifiable."
+                    "independently observable, or meaningfully verifiable. If subtasks are "
+                    "empty, accept only when existing behavior already satisfies every task "
+                    "criterion, provide specific evidence, and identify existing tests that "
+                    "verify those criteria. For ordinary plans set already_satisfied false, "
+                    "evidence empty, and test_target paths and selectors empty."
                 ),
             },
-            REVIEW_SCHEMA,
+            DECOMPOSITION_REVIEW_JSON_SCHEMA,
         )
         return json.dumps(result)
 

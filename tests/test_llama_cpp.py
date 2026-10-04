@@ -133,6 +133,38 @@ def test_decompose_uses_openai_compatible_schema_constrained_request():
         server.close()
 
 
+def test_decomposition_review_requests_no_change_evidence_schema(repository):
+    server = ResponseServer(
+        [
+            response(
+                {
+                    "accepted": True,
+                    "findings": [],
+                    "already_satisfied": True,
+                    "evidence": ["existing test covers the criterion"],
+                    "test_target": {
+                        "paths": ["tests/test_greeting.py"],
+                        "selectors": ["test_greeting"],
+                    },
+                }
+            )
+        ]
+    )
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        driver.review_decomposition(Task("preserve greeting"), (), repository)
+
+        request = server.requests[0][1]
+        schema = request["response_format"]["json_schema"]["schema"]
+        assert "already_satisfied" in schema["required"]
+        assert "evidence" in schema["required"]
+        assert "test_target" in schema["required"]
+        assert "existing tests" in request["messages"][1]["content"]
+    finally:
+        server.close()
+
+
 def repository_tools():
     from pathlib import Path
 

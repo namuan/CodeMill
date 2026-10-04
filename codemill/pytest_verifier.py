@@ -101,8 +101,21 @@ class PytestVerifier:
         purpose: VerificationPurpose,
         target: VerificationTarget | None,
     ) -> list[str]:
-        command = [sys.executable, "-m", "pytest", "-q", "--tb=short"]
-        if purpose in (VerificationPurpose.RED, VerificationPurpose.GREEN):
+        command = [
+            sys.executable,
+            "-B",
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            "--tb=short",
+        ]
+        if purpose in (
+            VerificationPurpose.RED,
+            VerificationPurpose.GREEN,
+            VerificationPurpose.NO_CHANGE,
+        ):
             if target is None or not target.paths:
                 raise ValueError("focused verification requires a test target")
             test_paths = tuple(self._resolve_target(path) for path in target.paths)

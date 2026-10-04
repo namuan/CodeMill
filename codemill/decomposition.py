@@ -2,18 +2,32 @@ import json
 import re
 from typing import Any
 
-from .models import DecompositionReview, ExpectedScope, SubTask
+from .models import DecompositionReview, ExpectedScope, SubTask, VerificationTarget
 
 
 DECOMPOSITION_REVIEW_JSON_SCHEMA = {
     "type": "object",
-    "required": ["accepted", "findings"],
+    "required": ["accepted", "findings", "already_satisfied", "evidence", "test_target"],
     "additionalProperties": False,
     "properties": {
         "accepted": {"type": "boolean"},
         "findings": {
             "type": "array",
             "items": {"type": "string", "minLength": 1},
+        },
+        "already_satisfied": {"type": "boolean"},
+        "evidence": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+        },
+        "test_target": {
+            "type": "object",
+            "required": ["paths", "selectors"],
+            "additionalProperties": False,
+            "properties": {
+                "paths": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "selectors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            },
         },
     },
 }
@@ -112,7 +126,11 @@ def parse_decomposition_review(payload: str) -> DecompositionReview:
         raise ValueError(f"invalid decomposition review JSON: {error.msg}") from error
 
     review = _require_object(document, "decomposition review")
-    _reject_unknown_fields(review, {"accepted", "findings"}, "decomposition review")
+    _reject_unknown_fields(
+        review,
+        {"accepted", "findings", "already_satisfied", "evidence", "test_target"},
+        "decomposition review",
+    )
     accepted = _require_boolean(
         _require_field(review, "accepted", "decomposition review"),
         "decomposition review.accepted",
@@ -123,7 +141,33 @@ def parse_decomposition_review(payload: str) -> DecompositionReview:
     )
     if not accepted and not findings:
         raise ValueError("rejected review must include findings")
-    return DecompositionReview(accepted, findings)
+    already_satisfied = _require_boolean(
+        review.get("already_satisfied", False), "decomposition review.already_satisfied"
+    )
+    evidence = _require_string_array(
+        review.get("evidence", []), "decomposition review.evidence"
+    )
+    target_value = review.get("test_target")
+    target = _parse_verification_target(target_value) if target_value is not None else None
+    if already_satisfied and (not accepted or not evidence or target is None or not target.paths):
+        raise ValueError("already-satisfied review requires acceptance, evidence, and test paths")
+    if not already_satisfied and (evidence or (target is not None and target.paths)):
+        raise ValueError("satisfaction evidence is only allowed for already-satisfied tasks")
+    return DecompositionReview(accepted, findings, already_satisfied, evidence, target)
+
+
+def _parse_verification_target(value: Any) -> VerificationTarget:
+    target = _require_object(value, "decomposition review.test_target")
+    _reject_unknown_fields(target, {"paths", "selectors"}, "decomposition review.test_target")
+    paths = _require_string_array(
+        _require_field(target, "paths", "decomposition review.test_target"),
+        "decomposition review.test_target.paths",
+    )
+    selectors = _require_string_array(
+        _require_field(target, "selectors", "decomposition review.test_target"),
+        "decomposition review.test_target.selectors",
+    )
+    return VerificationTarget(paths, selectors)
 
 
 def _parse_subtask(value: Any, path: str) -> SubTask:

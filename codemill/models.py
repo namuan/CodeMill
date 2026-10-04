@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -12,6 +14,7 @@ class VerificationPurpose(str, Enum):
     RED = "red"
     GREEN = "green"
     REGRESSION = "regression"
+    NO_CHANGE = "no_change"
     FINAL = "final"
 
 
@@ -60,6 +63,9 @@ class Task:
 class DecompositionReview:
     accepted: bool
     findings: tuple[str, ...] = ()
+    already_satisfied: bool = False
+    evidence: tuple[str, ...] = ()
+    test_target: VerificationTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -149,13 +155,17 @@ class RunResult:
     subtasks: tuple[SubTaskResult, ...] = ()
     planned_subtasks: tuple[SubTask, ...] = ()
     final_verification: VerificationRecord | None = None
+    pre_final_verifications: tuple[VerificationRecord, ...] = ()
 
     @property
     def verifications(self) -> tuple[VerificationRecord, ...]:
-        records = tuple(
-            record
-            for subtask in self.subtasks
-            for record in subtask.verifications
+        records = (
+            *self.pre_final_verifications,
+            *(
+                record
+                for subtask in self.subtasks
+                for record in subtask.verifications
+            ),
         )
         if self.final_verification is None:
             return records

@@ -69,7 +69,7 @@ result.md                concise human-readable summary and escalation details
 
 The exact serialization may evolve, but the information must be captured. Artifacts distinguish model claims from harness-observed facts. Record prompts or packed contexts only as needed for reproducibility and security; never persist secrets or assume conversation transcripts are authoritative. Preserve diagnostic output subject to size limits and secret redaction.
 
-A VERIFIED run requires evidence of valid RED for each newly implemented slice, test protection through implementation/repair, focused GREEN, required regression verification, accepted scope/minimality review, and final verification against the original task. If a task is already satisfied, CodeMill may report VERIFIED only when existing repository evidence demonstrates all acceptance criteria and final verification passes; it must not fabricate a failing test or unnecessary implementation. Ambiguous already-satisfied cases escalate. Model review may reject or escalate according to harness policy, but cannot substitute for or override deterministic verification.
+A VERIFIED run requires evidence of valid RED for each newly implemented slice, test protection through implementation/repair, focused GREEN, required regression verification, accepted scope/minimality review, and final verification against the original task. An already-satisfied result requires an empty implementation plan, explicit review evidence, a model-identified existing test target that passes, and final verification. It must not fabricate a failing test or unnecessary implementation. Ambiguous already-satisfied cases escalate. Model review may reject or escalate according to harness policy, but cannot substitute for or override deterministic verification.
 
 The end-to-end v0 acceptance test runs a bounded task against a fixture repository using a real llama.cpp endpoint, then checks the final repository state and bundle. Deterministic fake-model tests cover state-machine and failure cases. Real-server integration can be opt-in in CI, but it must be run before declaring the v0 prototype usable.
 
@@ -170,7 +170,7 @@ Target structured output:
 
 Before execution CodeMill parses the structured JSON against the strict decomposition contract, then validates unique IDs, dependency existence, acyclicity, topological ordering, non-empty objectives, and usable acceptance criteria. A malformed response or invalid graph is rejected before repository mutation.
 
-The decomposer proposes the graph; the orchestrator owns whether that graph is executable. A separate `review_decomposition` operation returns strict JSON with `accepted` and `findings` fields, and evaluates whether slices are independently verifiable vertical behaviors rather than horizontal layer tasks or bundles of unrelated work. Malformed review output or rejection escalates before any repository mutation. Acceptance is evidence for planning quality, not a substitute for deterministic verification of implemented behavior.
+The decomposer proposes the graph; the orchestrator owns whether that graph is executable. A separate `review_decomposition` operation returns strict JSON with `accepted`, `findings`, `already_satisfied`, `evidence`, and `test_target` fields, and evaluates whether slices are independently verifiable vertical behaviors rather than horizontal layer tasks or bundles of unrelated work. An empty plan is accepted only when the review supplies evidence and a non-empty existing test target; the harness runs that target before final verification. Malformed review output or rejection escalates before repository mutation. Acceptance is evidence for planning quality, not a substitute for deterministic verification.
 
 ### Decomposition quality validation
 
@@ -525,7 +525,7 @@ Minimality is semantic, not simply lowest line count: the implementation should 
 
 Answers: **does this repository state correctly complete this sub-task without breaking the current verified state?**
 
-Run cheapest-first: patch validation, format, lint/static checks, typecheck/compile, targeted tests, then affected tests. The initial Python verifier uses a fixed `sys.executable -m pytest` command. RED and GREEN run only the `VerificationTarget` paths/selectors; regression and final verification run the repository test suite. RED is classified as expected behavior only when pytest reports an assertion failure in the focused test itself. Collection/setup errors and assertions originating in helper or production code do not demonstrate valid RED.
+Run cheapest-first: patch validation, format, lint/static checks, typecheck/compile, targeted tests, then affected tests. The initial Python verifier uses a fixed, cache-free pytest command. RED, GREEN, and no-change acceptance verification run only the `VerificationTarget` paths/selectors; regression and final verification run the repository test suite. RED is classified as expected behavior only when pytest reports an assertion failure in the focused test itself. Collection/setup errors and assertions originating in helper or production code do not demonstrate valid RED.
 
 A sub-task does not unlock dependents until verification passes.
 

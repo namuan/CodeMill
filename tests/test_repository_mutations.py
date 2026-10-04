@@ -46,6 +46,49 @@ def test_reports_modified_paths_in_repository_status(tmp_path):
     assert status.changed_paths == ("src/example.py",)
 
 
+def test_already_satisfied_task_runs_existing_acceptance_test_without_changes(tmp_path):
+    initialize_repository(tmp_path)
+    (tmp_path / "src" / "example.py").write_text("def value(): return 1\n")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_example.py").write_text(
+        "from src.example import value\n\ndef test_value(): assert value() == 1\n"
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "add acceptance test"], check=True)
+
+    class Model:
+        def decompose(self, task, tools):
+            return '{"subtasks": []}'
+
+        def review_decomposition(self, task, subtasks, tools):
+            return json.dumps(
+                {
+                    "accepted": True,
+                    "findings": [],
+                    "already_satisfied": True,
+                    "evidence": ["test_value asserts the requested result"],
+                    "test_target": {
+                        "paths": ["tests/test_example.py"],
+                        "selectors": ["test_value"],
+                    },
+                }
+            )
+
+    tools = LocalRepositoryTools(tmp_path)
+    result = CodingHarness(Model(), tools, PytestVerifier(tmp_path)).run(
+        Task("return one", ("value() returns 1",))
+    )
+
+    assert result.status is RunStatus.VERIFIED
+    assert tuple(record.purpose for record in result.verifications) == (
+        VerificationPurpose.NO_CHANGE,
+        VerificationPurpose.FINAL,
+    )
+    assert result.verifications[0].result.command[-1] == "tests/test_example.py::test_value"
+    assert tools.git_status().clean
+    assert tools.git_diff() == ""
+
+
 def test_harness_completes_tdd_cycle_with_local_tools_and_pytest(tmp_path):
     initialize_repository(tmp_path)
     (tmp_path / "src" / "example.py").write_text(
@@ -138,7 +181,7 @@ index 0000000..0000000 100644
     )
     assert result.verifications[0].result.exit_code != 0
     assert all(record.result.exit_code == 0 for record in result.verifications[1:])
-    assert all(record.result.command[1:3] == ("-m", "pytest") for record in result.verifications)
+    assert all(record.result.command[1:4] == ("-B", "-m", "pytest") for record in result.verifications)
 
 
 def test_applies_test_patch_and_returns_focused_verification_target(tmp_path):

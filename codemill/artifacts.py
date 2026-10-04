@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import GitStatus, RunResult, RunStatus, Task
+from .models import GitStatus, RunResult, RunStatus, Task, VerificationPurpose
 
 
 class ArtifactWriterError(RuntimeError):
@@ -177,6 +177,11 @@ class ArtifactWriter:
             f"- Verified slices: {len(result.verified_slices)} / {len(result.planned_subtasks)}",
             "",
         ]
+        if any(
+            record.purpose is VerificationPurpose.NO_CHANGE
+            for record in result.pre_final_verifications
+        ):
+            lines.insert(6, "- Outcome: Already satisfied; existing acceptance tests passed without changes")
         if result.diagnostics:
             lines.extend(("## Diagnostics", "", *[f"- {item}" for item in result.diagnostics], ""))
         if result.status is not RunStatus.VERIFIED:

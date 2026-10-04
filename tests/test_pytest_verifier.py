@@ -64,11 +64,14 @@ def test_passes_focused_green_and_final_verification(tmp_path):
     target = VerificationTarget(("tests/test_feature.py",))
 
     focused = verifier.verify(VerificationPurpose.GREEN, target)
+    no_change = verifier.verify(VerificationPurpose.NO_CHANGE, target)
     final = verifier.verify(VerificationPurpose.FINAL)
 
     assert focused.ok
+    assert no_change.ok
+    assert no_change.command[-1] == "tests/test_feature.py"
     assert final.ok
-    assert focused.command[1:3] == ("-m", "pytest")
+    assert focused.command[1:4] == ("-B", "-m", "pytest")
     assert focused.exit_code == 0
     assert focused.duration_seconds >= 0
 

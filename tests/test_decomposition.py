@@ -119,8 +119,52 @@ def test_parses_structured_quality_review():
     assert review == DecompositionReview(False, ("slices are separated by layer",))
 
 
+def test_parses_already_satisfied_review_with_targeted_test_evidence():
+    review = parse_decomposition_review(
+        json.dumps(
+            {
+                "accepted": True,
+                "findings": [],
+                "already_satisfied": True,
+                "evidence": ["existing test proves the requested behavior"],
+                "test_target": {
+                    "paths": ["tests/test_feature.py"],
+                    "selectors": ["test_feature"],
+                },
+            }
+        )
+    )
+
+    assert review.already_satisfied
+    assert review.evidence == ("existing test proves the requested behavior",)
+    assert review.test_target.paths == ("tests/test_feature.py",)
+    assert review.test_target.selectors == ("test_feature",)
+
+
+def test_rejects_already_satisfied_review_without_test_evidence():
+    with pytest.raises(ValueError, match="requires acceptance, evidence, and test paths"):
+        parse_decomposition_review(
+            json.dumps(
+                {
+                    "accepted": True,
+                    "findings": [],
+                    "already_satisfied": True,
+                    "evidence": [],
+                    "test_target": {"paths": [], "selectors": []},
+                }
+            )
+        )
+
+
 def test_quality_review_schema_is_closed():
     assert DECOMPOSITION_REVIEW_JSON_SCHEMA["additionalProperties"] is False
+    assert DECOMPOSITION_REVIEW_JSON_SCHEMA["required"] == [
+        "accepted",
+        "findings",
+        "already_satisfied",
+        "evidence",
+        "test_target",
+    ]
 
 
 def test_rejects_quality_review_without_findings():

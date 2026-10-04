@@ -88,7 +88,7 @@ tests/
 
 ## Status
 
-CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. The CLI refuses dirty repositories, emits a JSON run result, and writes a reviewable artifact bundle. A complete real-model end-to-end run remains outstanding.
+CodeMill is an in-progress **v0 prototype**. The core includes structured decomposition, harness-enforced TDD, repository tools, pytest verification, a llama.cpp adapter, scope budgets, and benchmark scaffolding. If the plan is empty, an explicit review must cite existing tests, which the harness runs before reporting an unchanged task as verified. The CLI refuses dirty repositories, emits a JSON run result, and writes a reviewable artifact bundle. A complete real-model end-to-end run remains outstanding.
 
 See [the delivery plan](docs/PLAN.md) and [technical design](docs/TECHNICAL.md).
 
