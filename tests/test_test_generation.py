@@ -19,6 +19,7 @@ def test_adds_requested_api_guards_and_missing_pytest_import():
 
     assert "import pytest" in prepared
     assert "assert callable(getattr(LocalRepositoryTools, 'git_status', None))" in prepared
+    assert "'LocalRepositoryTools.git_status is missing'" in prepared
     assert prepared.index("assert callable(getattr") < prepared.index("with pytest.raises")
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 

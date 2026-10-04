@@ -76,9 +76,10 @@ def prepare_test_module(
                     continue
                 line_index = statement.lineno - 1
                 indentation = source_lines[line_index][: len(source_lines[line_index]) - len(source_lines[line_index].lstrip())]
+                message = repr(f"{class_name}.{method_name} is missing")
                 guard = (
                     f"{indentation}assert callable(getattr({class_name}, {method_name!r}, None)), "
-                    f"{class_name}.{method_name} is missing\n"
+                    f"{message}\n"
                 )
                 insertions.setdefault(line_index, []).append(guard)
                 guarded_symbols.add(f"{class_name}.{method_name}")
