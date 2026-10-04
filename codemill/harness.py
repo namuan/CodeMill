@@ -21,7 +21,7 @@ from .models import (
     VerifiedSliceRecord,
 )
 from .subtask_graph import order_subtasks
-from .test_generation import build_test_file_patch
+from .test_generation import build_test_file_patch, prepare_test_module
 from .tools import CodingTools, ModelDriver
 from .verifier import Verifier
 
@@ -519,7 +519,17 @@ class CodingHarness:
         while True:
             if module_mode:
                 try:
+                    test_module, guarded_symbols = prepare_test_module(test_module, task)
                     test_patch = build_test_file_patch(test_module, task.id, self.tools)
+                    if guarded_symbols:
+                        events.append(
+                            self._event(
+                                run_id,
+                                "test_api_presence_guard_added",
+                                task.id,
+                                guarded_symbols,
+                            )
+                        )
                 except ValueError as error:
                     revise_test_module = getattr(self.model, "revise_test_module", None)
                     if patch_revisions >= self.max_test_patch_retries or not callable(

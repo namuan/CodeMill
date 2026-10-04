@@ -1,7 +1,36 @@
 import pytest
 
+from codemill.models import SubTask
 from codemill.repository_tools import LocalRepositoryTools
-from codemill.test_generation import build_test_file_patch
+from codemill.test_generation import build_test_file_patch, prepare_test_module
+
+
+def test_adds_requested_api_guards_and_missing_pytest_import():
+    task = SubTask("ST-001", "Implement LocalRepositoryTools.git_status()")
+    source = (
+        "from codemill.repository_tools import LocalRepositoryTools\n\n"
+        "def test_status(tmp_path):\n"
+        "    tools = LocalRepositoryTools(tmp_path)\n"
+        "    with pytest.raises(ValueError):\n"
+        "        tools.git_status()\n"
+    )
+
+    prepared, guarded_symbols = prepare_test_module(source, task)
+
+    assert "import pytest" in prepared
+    assert "assert callable(getattr(tools, 'git_status', None))" in prepared
+    assert prepared.index("assert callable(getattr") < prepared.index("with pytest.raises")
+    assert guarded_symbols == ("LocalRepositoryTools.git_status",)
+
+
+def test_does_not_inject_guards_for_unmentioned_methods():
+    task = SubTask("ST-001", "Implement LocalRepositoryTools.git_status()")
+    source = "def test_status():\n    assert True\n"
+
+    prepared, guarded_symbols = prepare_test_module(source, task)
+
+    assert prepared == source
+    assert guarded_symbols == ()
 
 
 def test_builds_a_new_test_file_patch_at_a_harness_selected_path(tmp_path):

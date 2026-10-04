@@ -2,7 +2,79 @@ import ast
 import re
 from pathlib import PurePosixPath
 
+from .models import SubTask
 from .tools import CodingTools
+
+
+def prepare_test_module(source: str, task: SubTask) -> tuple[str, tuple[str, ...]]:
+    try:
+        module = ast.parse(source)
+    except SyntaxError as error:
+        raise ValueError(f"test module has invalid Python syntax: {error}") from error
+
+    task_text = " ".join((task.objective, *task.acceptance_criteria))
+    requested_methods = tuple(
+        dict.fromkeys(re.findall(r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)", task_text))
+    )
+    source_lines = source.splitlines(keepends=True)
+    if source_lines and not source_lines[-1].endswith(("\n", "\r")):
+        source_lines[-1] += "\n"
+    insertions: dict[int, list[str]] = {}
+    guarded_symbols = set()
+    for class_name, method_name in requested_methods:
+        for function in ast.walk(module):
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or not function.name.startswith(
+                "test_"
+            ):
+                continue
+            for statement in function.body:
+                call = next(
+                    (
+                        node
+                        for node in ast.walk(statement)
+                        if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == method_name
+                    ),
+                    None,
+                )
+                if call is None:
+                    continue
+                receiver = call.func.value
+                if isinstance(receiver, ast.Call) and isinstance(receiver.func, (ast.Name, ast.Attribute)):
+                    receiver = receiver.func
+                receiver_text = ast.get_source_segment(source, receiver)
+                if not receiver_text:
+                    continue
+                line_index = statement.lineno - 1
+                indentation = source_lines[line_index][: len(source_lines[line_index]) - len(source_lines[line_index].lstrip())]
+                guard = (
+                    f"{indentation}assert callable(getattr({receiver_text}, {method_name!r}, None)), "
+                    f"{class_name}.{method_name} is missing\n"
+                )
+                insertions.setdefault(line_index, []).append(guard)
+                guarded_symbols.add(f"{class_name}.{method_name}")
+                break
+
+    for line_index in sorted(insertions, reverse=True):
+        source_lines[line_index:line_index] = insertions[line_index]
+
+    uses_pytest = any(isinstance(node, ast.Name) and node.id == "pytest" for node in ast.walk(module))
+    imports_pytest = any(
+        isinstance(node, ast.Import)
+        and any(alias.name == "pytest" and alias.asname in {None, "pytest"} for alias in node.names)
+        for node in ast.walk(module)
+    )
+    if uses_pytest and not imports_pytest:
+        insertion_index = _pytest_import_line(module)
+        source_lines.insert(insertion_index, "import pytest\n")
+
+    prepared = "".join(source_lines)
+    try:
+        ast.parse(prepared)
+    except SyntaxError as error:
+        raise ValueError(f"prepared test module has invalid Python syntax: {error}") from error
+    return prepared, tuple(sorted(guarded_symbols))
 
 
 def build_test_file_patch(source: str, subtask_id: str, tools: CodingTools) -> str:
@@ -65,6 +137,18 @@ def _new_test_path(subtask_id: str, tools: CodingTools) -> str:
         if path not in existing:
             return path
         suffix += 1
+
+
+def _pytest_import_line(module: ast.Module) -> int:
+    body = module.body
+    insertion_index = 0
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        if isinstance(body[0].value.value, str):
+            insertion_index = body[0].end_lineno
+    for node in body:
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            insertion_index = max(insertion_index, node.end_lineno)
+    return insertion_index
 
 
 def _is_test_function(node: ast.AST) -> bool:
