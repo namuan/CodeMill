@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 
@@ -76,7 +77,18 @@ def test_real_model_completes_tdd_workflow_and_writes_artifacts(tmp_path):
         tools.git_diff(),
     )
 
-    assert (artifacts / "plan.json").exists()
+    run_document = json.loads((artifacts / "run.json").read_text())
+    assert run_document["status"] == RunStatus.VERIFIED.value
+    assert run_document["initial_git_status"]["commit"] == initial_status.commit
+    plan = json.loads((artifacts / "plan.json").read_text())
+    assert plan["subtasks"]
+    trace = (artifacts / "trace.jsonl").read_text()
+    assert '"name": "red_confirmed"' in trace
+    verification = json.loads((artifacts / "verification.json").read_text())
+    purposes = {record["purpose"] for record in verification["records"]}
+    assert {"red", "green", "regression", "final"} <= purposes
+    changed = json.loads((artifacts / "changed-files.json").read_text())
+    assert {"src/greetings.py", *accepted_test_paths} <= set(changed["changed_paths"])
     assert (artifacts / "trace.jsonl").exists()
-    assert (artifacts / "verification.json").exists()
+    assert (artifacts / "manifest.json").exists()
     assert "greeting" in (artifacts / "final.diff").read_text()
