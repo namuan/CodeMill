@@ -165,7 +165,7 @@ Reject or escalate when the implementation changes the protected test, exceeds s
 
 Build tasks from historical commits and evaluate the full decomposition-to-TDD workflow.
 
-Track task success plus: slice count/depth, RED validity, tests that unexpectedly pass, GREEN attempts, test-mutation attempts, implementation LOC/files, unnecessary-code findings, regression failures, tokens/tool calls, latency/GPU time, escalation, and human intervention.
+Track task success plus: slice count/depth, RED validity, tests that unexpectedly pass, GREEN attempts, test-mutation attempts, implementation LOC/files, unnecessary-code findings, regression failures, tokens/tool calls, latency/GPU time, escalation, and human intervention. The initial metrics module derives run/sub-task outcomes, valid/rejected RED, repair counts, scope violations, and verified changed files from harness events and records; inference cost, timing, test-mutation attempts, and benchmark datasets remain outstanding.
 
 Compare small-model+harness runs with stronger-model baselines under equivalent verification.
 
