@@ -23,6 +23,7 @@ class FakeTools:
         self.current_test_target = None
         self.active_test_patch = None
         self.discard_calls = 0
+        self.patch_paths = []
 
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
@@ -32,16 +33,24 @@ class FakeTools:
         self.active_test_patch = patch
         subtask_id = patch.rsplit(" ", 1)[-1]
         self.current_test_target = VerificationTarget((f"tests/test_{subtask_id}.py",))
+        self.patch_paths.append(self.current_test_target.paths[0])
         return self.current_test_target
 
     def discard_test_patch(self):
         self.discard_calls += 1
         self.active_test_patch = None
+        self.patch_paths.pop()
 
     def freeze_tests(self):
         self.freeze_calls += 1
         self.test_protection = ProtectedTests(self.current_test_target.paths, "test-fingerprint")
         return self.test_protection
+
+    def patch_checkpoint(self):
+        return len(self.patch_paths)
+
+    def changed_files_since(self, checkpoint):
+        return tuple(sorted(set(self.patch_paths[checkpoint:])))
 
     def apply_production_patch(self, patch, protected_tests):
         if protected_tests != self.test_protection:
@@ -50,6 +59,8 @@ class FakeTools:
             raise PermissionError("implementation attempted to modify a protected test")
         self.production_protections.append(protected_tests)
         self.patches.append(f"implementation:{patch}")
+        subtask_id = patch.rsplit(" ", 1)[-1]
+        self.patch_paths.append(f"src/{subtask_id}.py")
 
 
 class FakeModel:
@@ -139,6 +150,17 @@ def test_repairs_subtask_then_runs_final_verification():
     assert "final_verify_started" in [event.name for event in result.events]
     assert all(event.run_id == result.run_id for event in result.events)
     assert all(event.subtask_id == "ST-001" for event in result.subtasks[0].events)
+    record = result.subtasks[0].verified_slice
+    assert record.subtask_id == "ST-001"
+    assert record.behavior == "fix bug"
+    assert record.accepted_test_paths == ("tests/test_ST-001.py",)
+    assert record.changed_files == ("src/ST-001.py", "tests/test_ST-001.py")
+    assert record.verification_purposes == (
+        VerificationPurpose.RED,
+        VerificationPurpose.GREEN,
+        VerificationPurpose.REGRESSION,
+    )
+    assert result.subtasks[0].events[-1].name == "slice_compacted"
 
 
 def test_freezes_red_test_before_production_patches():

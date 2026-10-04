@@ -119,6 +119,21 @@ class LocalRepositoryTools:
     def git_diff(self) -> str:
         return "\n".join(patch for _, patch in self._patch_log)
 
+    def patch_checkpoint(self) -> int:
+        return len(self._patch_log)
+
+    def changed_files_since(self, checkpoint: int) -> tuple[str, ...]:
+        if isinstance(checkpoint, bool) or not isinstance(checkpoint, int):
+            raise ValueError("patch checkpoint must be an integer")
+        if checkpoint < 0 or checkpoint > len(self._patch_log):
+            raise ValueError("patch checkpoint is outside the current run")
+        paths = {
+            path
+            for _, patch in self._patch_log[checkpoint:]
+            for path in self._parse_patch_paths(patch)
+        }
+        return tuple(sorted(paths))
+
     def list_tree(self, path: str = ".", depth: int = 2) -> tuple[str, ...]:
         if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
             raise ValueError("depth must be a non-negative integer")

@@ -88,12 +88,23 @@ class RunEvent:
 
 
 @dataclass(frozen=True)
+class VerifiedSliceRecord:
+    subtask_id: str
+    behavior: str
+    acceptance_criteria: tuple[str, ...]
+    accepted_test_paths: tuple[str, ...]
+    changed_files: tuple[str, ...]
+    verification_purposes: tuple[VerificationPurpose, ...]
+
+
+@dataclass(frozen=True)
 class SubTaskResult:
     subtask_id: str
     status: RunStatus
     attempts: int
     diagnostics: tuple[str, ...] = ()
     events: tuple[RunEvent, ...] = field(default_factory=tuple)
+    verified_slice: VerifiedSliceRecord | None = None
 
 
 @dataclass(frozen=True)
@@ -104,3 +115,11 @@ class RunResult:
     diagnostics: tuple[str, ...] = ()
     events: tuple[RunEvent, ...] = field(default_factory=tuple)
     subtasks: tuple[SubTaskResult, ...] = ()
+
+    @property
+    def verified_slices(self) -> tuple[VerifiedSliceRecord, ...]:
+        return tuple(
+            result.verified_slice
+            for result in self.subtasks
+            if result.verified_slice is not None
+        )

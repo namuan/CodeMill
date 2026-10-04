@@ -113,6 +113,10 @@ index 0000000..0000000 100644
 
     assert result.status.value == "verified"
     assert result.subtasks[0].attempts == 1
+    assert result.verified_slices == (result.subtasks[0].verified_slice,)
+    verified_slice = result.subtasks[0].verified_slice
+    assert verified_slice.accepted_test_paths == ("tests/test_example.py",)
+    assert verified_slice.changed_files == ("src/example.py", "tests/test_example.py")
     assert (tmp_path / "src" / "example.py").read_text() == (
         "def add(left, right):\n    return left + right\n"
     )

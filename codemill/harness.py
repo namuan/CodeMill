@@ -13,6 +13,7 @@ from .models import (
     VerificationPurpose,
     VerificationResult,
     VerificationTarget,
+    VerifiedSliceRecord,
 )
 from .subtask_graph import order_subtasks
 from .tools import CodingTools, ModelDriver
@@ -151,6 +152,7 @@ class CodingHarness:
 
     def _run_subtask(self, run_id: str, task: SubTask) -> SubTaskResult:
         events: list[RunEvent] = [self._event(run_id, "subtask_started", task.id)]
+        checkpoint = self.tools.patch_checkpoint()
         attempts = 0
 
         try:
@@ -234,13 +236,27 @@ class CodingHarness:
                             events.append(
                                 self._event(run_id, "minimality_review_accepted", task.id)
                             )
+                            verified_slice = VerifiedSliceRecord(
+                                task.id,
+                                task.objective,
+                                task.acceptance_criteria,
+                                test_target.paths,
+                                self.tools.changed_files_since(checkpoint),
+                                (
+                                    VerificationPurpose.RED,
+                                    VerificationPurpose.GREEN,
+                                    VerificationPurpose.REGRESSION,
+                                ),
+                            )
                             events.append(self._event(run_id, "subtask_verified", task.id))
+                            events.append(self._event(run_id, "slice_compacted", task.id))
                             return SubTaskResult(
                                 task.id,
                                 RunStatus.VERIFIED,
                                 attempts,
                                 result.diagnostics,
                                 tuple(events),
+                                verified_slice,
                             )
                         result = VerificationResult(False, review.findings)
                         events.append(

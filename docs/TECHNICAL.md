@@ -345,7 +345,7 @@ VERIFIED
 next SubTask
 ```
 
-A verified-slice record should be compact enough to retrieve as prerequisite context without replacing current source as truth.
+A verified-slice record should be compact enough to retrieve as prerequisite context without replacing current source as truth. The current run result retains each record with its behavior, acceptance criteria, accepted test paths, changed files, and successful verification purposes. The v0 artifact writer must persist these records for review and later retrieval.
 
 ### 6.7 Learning store
 
