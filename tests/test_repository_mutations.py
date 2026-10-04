@@ -14,6 +14,28 @@ def initialize_repository(path):
     subprocess.run(["git", "-C", str(path), "commit", "-qm", "initial"], check=True)
 
 
+def test_reports_repository_revision_and_clean_status(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+
+    status = tools.git_status()
+
+    assert status.clean
+    assert status.commit
+    assert status.changed_paths == ()
+
+
+def test_reports_modified_paths_in_repository_status(tmp_path):
+    initialize_repository(tmp_path)
+    (tmp_path / "src" / "example.py").write_text("value = 2\n")
+    tools = LocalRepositoryTools(tmp_path)
+
+    status = tools.git_status()
+
+    assert not status.clean
+    assert status.changed_paths == ("src/example.py",)
+
+
 def test_applies_test_patch_and_returns_focused_verification_target(tmp_path):
     initialize_repository(tmp_path)
     tools = LocalRepositoryTools(tmp_path)

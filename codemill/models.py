@@ -53,6 +53,14 @@ class DecompositionReview:
 
 
 @dataclass(frozen=True)
+class GitStatus:
+    commit: str | None
+    branch: str
+    clean: bool
+    changed_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class VerificationTarget:
     paths: tuple[str, ...]
     selectors: tuple[str, ...] = ()

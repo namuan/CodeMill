@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .models import ProtectedTests, VerificationTarget
+from .models import GitStatus, ProtectedTests, VerificationTarget
 
 
 class LocalRepositoryTools:
@@ -80,6 +80,41 @@ class LocalRepositoryTools:
             self._apply_git_patch(patch, reverse=True)
             raise PermissionError("production patch modified a protected test")
         self._patch_log.append(("production", patch))
+
+    def git_status(self) -> GitStatus:
+        self._require_git()
+        root = self._git_output("rev-parse", "--show-toplevel").strip()
+        if Path(root).resolve() != self.root:
+            raise ValueError("repository root must be the Git worktree root")
+        head_result = subprocess.run(
+            [self.git_path, "-C", str(self.root), "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.search_timeout,
+        )
+        commit = head_result.stdout.strip() if head_result.returncode == 0 else None
+        branch = self._git_output("branch", "--show-current").strip()
+        raw_status = self._git_output(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "-z",
+        )
+        records = raw_status.split("\0")
+        paths = []
+        index = 0
+        while index < len(records):
+            record = records[index]
+            index += 1
+            if not record:
+                continue
+            paths.append(record[3:])
+            if record[:2].strip() in {"R", "C"} and index < len(records):
+                paths.append(records[index])
+                index += 1
+        changed_paths = tuple(sorted(set(paths)))
+        return GitStatus(commit, branch, not changed_paths, changed_paths)
 
     def git_diff(self) -> str:
         return "\n".join(patch for _, patch in self._patch_log)
@@ -360,6 +395,23 @@ class LocalRepositoryTools:
         if len(output) > self.max_search_output_chars:
             return output[: self.max_search_output_chars] + "\n[output truncated]"
         return output
+
+    def _require_git(self) -> None:
+        if self.git_path is None:
+            raise RuntimeError("git executable 'git' is required for repository status")
+
+    def _git_output(self, *arguments: str) -> str:
+        self._require_git()
+        result = subprocess.run(
+            [self.git_path, "-C", str(self.root), *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=self.search_timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "git command failed")
+        return result.stdout
 
     def _ensure_clean_git_repository(self) -> None:
         if self._initial_clean_checked:
