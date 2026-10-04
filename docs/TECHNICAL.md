@@ -524,7 +524,7 @@ Minimality is semantic, not simply lowest line count: the implementation should 
 
 Answers: **does this repository state correctly complete this sub-task without breaking the current verified state?**
 
-Run cheapest-first: patch validation, format, lint/static checks, typecheck/compile, targeted tests, then affected tests.
+Run cheapest-first: patch validation, format, lint/static checks, typecheck/compile, targeted tests, then affected tests. The initial Python verifier uses a fixed `sys.executable -m pytest` command. RED and GREEN run only the `VerificationTarget` paths/selectors; regression and final verification run the repository test suite. RED is classified as expected behavior only when pytest reports an assertion failure in the focused test itself. Collection/setup errors and assertions originating in helper or production code do not demonstrate valid RED.
 
 A sub-task does not unlock dependents until verification passes.
 

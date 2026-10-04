@@ -1,6 +1,9 @@
+import json
 import subprocess
 
-from codemill.models import VerificationTarget
+from codemill.harness import CodingHarness
+from codemill.models import Task, VerificationTarget
+from codemill.pytest_verifier import PytestVerifier
 from codemill.repository_tools import LocalRepositoryTools
 
 
@@ -34,6 +37,87 @@ def test_reports_modified_paths_in_repository_status(tmp_path):
 
     assert not status.clean
     assert status.changed_paths == ("src/example.py",)
+
+
+def test_harness_completes_tdd_cycle_with_local_tools_and_pytest(tmp_path):
+    initialize_repository(tmp_path)
+    (tmp_path / "src" / "example.py").write_text(
+        "def add(left, right):\n    return None\n"
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "add stub"], check=True)
+
+    class Model:
+        def decompose(self, task, tools):
+            return json.dumps(
+                {
+                    "subtasks": [
+                        {
+                            "id": "add",
+                            "objective": "Return the sum of two integers",
+                            "acceptance_criteria": ["add(2, 3) returns 5"],
+                            "constraints": [],
+                            "depends_on": [],
+                            "expected_scope": {
+                                "max_files": 2,
+                                "max_changed_lines": 20,
+                                "allow_dependencies": False,
+                                "allow_public_api": False,
+                                "allow_schema_changes": False,
+                            },
+                        }
+                    ]
+                }
+            )
+
+        def review_decomposition(self, task, subtasks, tools):
+            return '{"accepted": true, "findings": []}'
+
+        def locate_and_plan(self, task, tools):
+            return "Add the observable integer addition behavior."
+
+        def create_test_patch(self, task, plan, tools):
+            return """diff --git a/tests/test_example.py b/tests/test_example.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_example.py
+@@ -0,0 +1,4 @@
++from src.example import add
++
++def test_add():
++    assert add(2, 3) == 5
++"""
+
+        def create_patch(self, task, plan, tools):
+            return """diff --git a/src/example.py b/src/example.py
+index 0000000..0000000 100644
+--- a/src/example.py
++++ b/src/example.py
+@@ -1,2 +1,2 @@
+ def add(left, right):
+-    return None
++    return left + right
+"""
+
+        def review_implementation(self, task, diff, tools):
+            return '{"accepted": true, "findings": []}'
+
+        def repair_patch(self, task, diagnostics, tools):
+            raise AssertionError("repair should not be needed")
+
+    tools = LocalRepositoryTools(tmp_path)
+    result = CodingHarness(Model(), tools, PytestVerifier(tmp_path)).run(
+        Task("add two integers")
+    )
+
+    assert result.status.value == "verified"
+    assert result.subtasks[0].attempts == 1
+    assert (tmp_path / "src" / "example.py").read_text() == (
+        "def add(left, right):\n    return left + right\n"
+    )
+    assert "return left + right" in tools.git_diff()
+    assert result.events[-1].name == "run_verified"
 
 
 def test_applies_test_patch_and_returns_focused_verification_target(tmp_path):
