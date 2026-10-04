@@ -166,8 +166,14 @@ class CodingHarness:
             events.append(self._event(run_id, "test_patch_applied", task.id))
 
             events.append(self._event(run_id, "red_verify_started", task.id))
-            red = self.verifier.verify(VerificationPurpose.RED, test_target)
+            try:
+                red = self.verifier.verify(VerificationPurpose.RED, test_target)
+            except Exception:
+                self.tools.discard_test_patch()
+                raise
             if red.ok or red.failure_kind is not VerificationFailureKind.EXPECTED_BEHAVIOR:
+                self.tools.discard_test_patch()
+                events.append(self._event(run_id, "test_patch_discarded", task.id))
                 diagnostics = red.diagnostics or (
                     "focused test did not fail for the expected missing behavior",
                 )
@@ -186,7 +192,11 @@ class CodingHarness:
                 )
 
             events.append(self._event(run_id, "red_confirmed", task.id, red.diagnostics))
-            protected_tests = self.tools.freeze_tests()
+            try:
+                protected_tests = self.tools.freeze_tests()
+            except Exception:
+                self.tools.discard_test_patch()
+                raise
             events.append(self._event(run_id, "tests_frozen", task.id))
             events.append(self._event(run_id, "implementation_started", task.id))
             patch = self.model.create_patch(task, plan, self.tools)

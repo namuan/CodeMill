@@ -21,15 +21,22 @@ class FakeTools:
         self.test_protection = None
         self.production_protections = []
         self.current_test_target = None
+        self.active_test_patch = None
+        self.discard_calls = 0
 
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
     def git_diff(self): return "diff"
     def apply_test_patch(self, patch):
         self.patches.append(f"test:{patch}")
+        self.active_test_patch = patch
         subtask_id = patch.rsplit(" ", 1)[-1]
         self.current_test_target = VerificationTarget((f"tests/test_{subtask_id}.py",))
         return self.current_test_target
+
+    def discard_test_patch(self):
+        self.discard_calls += 1
+        self.active_test_patch = None
 
     def freeze_tests(self):
         self.freeze_calls += 1
@@ -276,8 +283,24 @@ def test_escalates_if_focused_test_does_not_demonstrate_expected_red():
 
     assert result.status is RunStatus.ESCALATED
     assert tools.patches == ["test:test patch ST-001"]
+    assert tools.discard_calls == 1
+    assert tools.active_test_patch is None
     assert "implementation_started" not in [event.name for event in result.events]
     assert result.events[-1].name == "run_escalated"
+
+
+def test_discards_focused_test_when_red_verification_errors():
+    class FailingRedVerifier:
+        def verify(self, purpose, target=None):
+            raise RuntimeError("test runner unavailable")
+
+    tools = FakeTools()
+    result = CodingHarness(FakeModel(), tools, FailingRedVerifier()).run(Task("feature"))
+
+    assert result.status is RunStatus.FAILED
+    assert tools.discard_calls == 1
+    assert tools.active_test_patch is None
+    assert result.subtasks[0].events[-1].name == "subtask_failed"
 
 
 def test_escalates_if_focused_test_fails_for_an_unexpected_reason():
