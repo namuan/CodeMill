@@ -4,6 +4,7 @@ from uuid import uuid4
 from .decomposition import parse_decomposition, parse_decomposition_review
 from .models import (
     ExpectedScope,
+    ProtectedTestMutationError,
     RunEvent,
     RunResult,
     RunStatus,
@@ -357,6 +358,19 @@ class CodingHarness:
                     task_checkpoint,
                 )
                 events.append(self._event(run_id, "repair_patch_applied", task.id))
+        except ProtectedTestMutationError as error:
+            diagnostics = (str(error),)
+            events.append(
+                self._event(run_id, "protected_test_mutation_attempt", task.id, diagnostics)
+            )
+            events.append(self._event(run_id, "subtask_failed", task.id, diagnostics))
+            return SubTaskResult(
+                task.id,
+                RunStatus.FAILED,
+                attempts,
+                diagnostics,
+                tuple(events),
+            )
         except ScopeViolationError as error:
             diagnostics = (str(error),)
             events.append(self._event(run_id, "scope_violation", task.id, diagnostics))

@@ -7,7 +7,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .models import ExpectedScope, GitStatus, ProtectedTests, ScopeViolationError, VerificationTarget
+from .models import (
+    ExpectedScope,
+    GitStatus,
+    ProtectedTestMutationError,
+    ProtectedTests,
+    ScopeViolationError,
+    VerificationTarget,
+)
 
 
 class LocalRepositoryTools:
@@ -48,7 +55,7 @@ class LocalRepositoryTools:
         if any(not self._is_test_path(path) for path in paths):
             raise ValueError("test patch may only modify test files")
         if self._test_paths.intersection(paths):
-            raise ValueError("test patch may not modify an already protected test")
+            raise ProtectedTestMutationError("test patch may not modify an already protected test")
         self._validate_scope(patch, scope, checkpoint)
         self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
@@ -89,16 +96,16 @@ class LocalRepositoryTools:
         if self._protected_tests is None or protected_tests != self._protected_tests:
             raise PermissionError("protected test set does not match the active run")
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
-            raise PermissionError("protected test fingerprint changed before patching")
+            raise ProtectedTestMutationError("protected test fingerprint changed before patching")
         paths = self._parse_patch_paths(patch)
         if any(self._is_test_path(path) for path in paths):
-            raise PermissionError("production patch may not modify test files")
+            raise ProtectedTestMutationError("production patch may not modify test files")
         self._validate_scope(patch, scope, checkpoint)
         self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
             self._apply_git_patch(patch, reverse=True)
-            raise PermissionError("production patch modified a protected test")
+            raise ProtectedTestMutationError("production patch modified a protected test")
         self._patch_log.append(("production", patch))
 
     def git_status(self) -> GitStatus:

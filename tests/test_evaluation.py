@@ -18,6 +18,7 @@ def test_measures_harness_outcomes_without_hidden_model_reasoning():
         events=(
             RunEvent("run-1", "red_confirmed", "ST-001"),
             RunEvent("run-1", "repair_started", "ST-001"),
+            RunEvent("run-1", "protected_test_mutation_attempt", "ST-001"),
             RunEvent("run-1", "regression_verify_passed", "ST-001"),
             RunEvent("run-1", "final_verify_passed"),
         ),
@@ -49,6 +50,7 @@ def test_measures_harness_outcomes_without_hidden_model_reasoning():
     assert metrics.verified_subtasks == 1
     assert metrics.valid_reds == 1
     assert metrics.repairs == 1
+    assert metrics.test_mutation_attempts == 1
     assert metrics.scope_violations == 0
     assert metrics.changed_files == ("src/greeting.py", "tests/test_greeting.py")
 
@@ -94,6 +96,7 @@ def test_aggregates_success_escalation_and_repair_metrics():
     assert summary.escalated_runs == 1
     assert summary.failed_runs == 1
     assert summary.repair_attempts == 1
+    assert summary.test_mutation_attempts == 0
     assert summary.success_rate == 1 / 3
 
 

@@ -2,7 +2,14 @@ import json
 import subprocess
 
 from codemill.harness import CodingHarness
-from codemill.models import Task, VerificationTarget
+from codemill.models import (
+    RunStatus,
+    Task,
+    VerificationFailureKind,
+    VerificationPurpose,
+    VerificationResult,
+    VerificationTarget,
+)
 from codemill.pytest_verifier import PytestVerifier
 from codemill.repository_tools import LocalRepositoryTools
 
@@ -323,6 +330,82 @@ new file mode 100644
         raise AssertionError("mismatched diff headers were accepted")
 
     assert not (tmp_path.parent / "outside.py").exists()
+
+
+def test_harness_records_attempt_to_mutate_protected_test(tmp_path):
+    initialize_repository(tmp_path)
+
+    class Model:
+        def decompose(self, task, tools):
+            return json.dumps(
+                {
+                    "subtasks": [
+                        {
+                            "id": "scope",
+                            "objective": "keep a protected test unchanged",
+                            "acceptance_criteria": ["test remains immutable"],
+                            "constraints": [],
+                            "depends_on": [],
+                            "expected_scope": {
+                                "max_files": 2,
+                                "max_changed_lines": 20,
+                                "allow_dependencies": False,
+                                "allow_public_api": False,
+                                "allow_schema_changes": False,
+                                "planned_paths": ["tests/**"],
+                            },
+                        }
+                    ]
+                }
+            )
+
+        def review_decomposition(self, task, subtasks, tools):
+            return '{"accepted": true, "findings": []}'
+
+        def locate_and_plan(self, task, tools):
+            return "test plan"
+
+        def create_test_patch(self, task, plan, tools):
+            return """diff --git a/tests/test_scope.py b/tests/test_scope.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_scope.py
+@@ -0,0 +1 @@
++def test_scope(): pass
+"""
+
+        def create_patch(self, task, plan, tools, test_target, red_diagnostics):
+            return """diff --git a/tests/test_scope.py b/tests/test_scope.py
+--- a/tests/test_scope.py
++++ b/tests/test_scope.py
+@@ -1 +1 @@
+-def test_scope(): pass
++def test_scope(): assert True
+"""
+
+        def review_implementation(self, task, diff, tools, test_target):
+            raise AssertionError("review must not run after a protected-test violation")
+
+        def repair_patch(self, task, diagnostics, tools, test_target):
+            raise AssertionError("repair must not run after a protected-test violation")
+
+    class Verifier:
+        def verify(self, purpose, target=None):
+            if purpose is VerificationPurpose.RED:
+                return VerificationResult(
+                    False,
+                    ("missing behavior",),
+                    VerificationFailureKind.EXPECTED_BEHAVIOR,
+                )
+            return VerificationResult(True)
+
+    tools = LocalRepositoryTools(tmp_path)
+    result = CodingHarness(Model(), tools, Verifier()).run(Task("protect test"))
+
+    assert result.status is RunStatus.FAILED
+    assert "protected_test_mutation_attempt" in [event.name for event in result.events]
+    assert (tmp_path / "tests" / "test_scope.py").read_text() == "def test_scope(): pass\n"
 
 
 def test_rejects_paths_outside_repository_in_patch(tmp_path):

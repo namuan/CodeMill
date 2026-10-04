@@ -111,6 +111,7 @@ class RunMetrics:
     rejected_reds: int
     repairs: int
     scope_violations: int
+    test_mutation_attempts: int
     changed_files: tuple[str, ...]
     model_calls: int
     failed_model_calls: int
@@ -140,6 +141,7 @@ class RunMetrics:
             event_names.count("red_rejected"),
             event_names.count("repair_started"),
             event_names.count("scope_violation"),
+            event_names.count("protected_test_mutation_attempt"),
             tuple(sorted(changed_files)),
             len(model_calls),
             sum(not call.succeeded for call in model_calls),
@@ -163,6 +165,7 @@ class EvaluationSummary:
     escalated_runs: int
     failed_runs: int
     repair_attempts: int
+    test_mutation_attempts: int = 0
     model_calls: int = 0
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -188,6 +191,7 @@ class EvaluationSummary:
             sum(metric.status is RunStatus.ESCALATED for metric in metrics),
             sum(metric.status is RunStatus.FAILED for metric in metrics),
             sum(metric.repairs for metric in metrics),
+            sum(metric.test_mutation_attempts for metric in metrics),
             sum(metric.model_calls for metric in metrics),
             cls._sum_metric_tokens(metrics, "prompt_tokens"),
             cls._sum_metric_tokens(metrics, "completion_tokens"),

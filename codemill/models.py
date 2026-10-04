@@ -24,6 +24,10 @@ class ScopeViolationError(PermissionError):
     pass
 
 
+class ProtectedTestMutationError(PermissionError):
+    pass
+
+
 @dataclass(frozen=True)
 class ExpectedScope:
     max_files: int = 3
