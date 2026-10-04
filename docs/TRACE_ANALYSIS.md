@@ -26,7 +26,7 @@ The historical attempts did not reach implementation, so they provide no evidenc
 
 ### Runtime and evidence quality
 
-The context-dedup test-generation call timed out after 300 seconds. The report records the timeout and duration, but token totals are unavailable for the failed call. This is an inference/runtime failure, not a demonstrated reasoning failure. Reports capture event traces, task/revision metadata, final status, and diff; the current sample does not justify learning generalized rules from model trajectories.
+The context-dedup test-generation call timed out after 300 seconds. The report records the timeout and duration, but token totals are unavailable for the failed call. This is an inference/runtime failure, not a demonstrated reasoning failure. Reports capture event traces, task/revision metadata, final status, and diff; the current sample does not justify learning generalized rules from model trajectories. Benchmark reports now include a deterministic stage/category diagnosis derived from events and diagnostics, without inferring behavior for stages the run never reached.
 
 ## Conclusions
 

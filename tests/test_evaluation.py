@@ -117,7 +117,10 @@ def test_writes_reproducible_benchmark_report(tmp_path):
         0,
         "run-report",
         diagnostics=("decomposition was rejected",),
-        events=(RunEvent("run-report", "run_escalated"),),
+        events=(
+            RunEvent("run-report", "decomposition_review_rejected"),
+            RunEvent("run-report", "run_escalated"),
+        ),
     )
     metrics = RunMetrics.from_result(
         result,
@@ -145,6 +148,8 @@ def test_writes_reproducible_benchmark_report(tmp_path):
     assert report["runs"][0]["metrics"]["total_tokens"] == 25
     assert report["summary"]["success_rate"] == 0.0
     assert report["runs"][0]["result"]["diagnostics"] == ["decomposition was rejected"]
+    assert report["runs"][0]["failure_analysis"]["stage"] == "decomposition"
+    assert report["runs"][0]["failure_analysis"]["category"] == "decomposition_review_rejected"
 
     with pytest.raises(EvaluationReportError, match="already exists"):
         write_evaluation_report(report_path, (run,), "local-coder-9b-q8")

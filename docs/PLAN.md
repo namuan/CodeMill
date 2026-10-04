@@ -172,7 +172,7 @@ Model comparisons are optional. If requested, compare models on identical cases 
 
 ## Phase 9 — Learning from traces
 
-Analyze decomposition, test-generation, implementation, and repair failures separately before considering trajectory distillation, SFT/LoRA, or verifier-driven optimization. The initial stage-by-stage analysis is in `docs/TRACE_ANALYSIS.md`: current historical runs expose test-generation failures, but do not reach implementation or repair. Do not generalize trace learnings or train on this sample; gather successful and later-stage traces first.
+Analyze decomposition, test-generation, implementation, and repair failures separately before considering trajectory distillation, SFT/LoRA, or verifier-driven optimization. The initial stage-by-stage analysis is in `docs/TRACE_ANALYSIS.md`; benchmark reports now include deterministic stage/category diagnosis from trace evidence. Current historical runs expose test-generation failures, but do not reach implementation or repair. Do not generalize trace learnings or train on this sample; gather successful and later-stage traces first.
 
 Fine-tuning is an optimization step, not the starting architecture.
 

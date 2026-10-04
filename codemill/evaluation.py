@@ -13,6 +13,7 @@ from typing import Callable
 
 from .benchmark import BenchmarkCase, BenchmarkDatasetError, verify_benchmark_checkout
 from .models import GitStatus, InferenceMetrics, RunResult, RunStatus, Task
+from .trace_analysis import analyze_trace
 
 
 class BenchmarkRunnerError(RuntimeError):
@@ -272,6 +273,7 @@ def write_evaluation_report(
                     asdict(run.final_git_status) if run.final_git_status is not None else None
                 ),
                 "final_diff": run.final_diff,
+                "failure_analysis": asdict(analyze_trace(run.result)),
                 "metrics": asdict(run.metrics),
                 "result": asdict(run.result),
             }
