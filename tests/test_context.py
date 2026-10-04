@@ -1,4 +1,5 @@
-from codemill.context import RepositoryMap, summarize_repository
+from codemill.context import ContextBuilder, RepositoryMap, summarize_repository
+from codemill.models import SubTask, VerificationTarget
 from codemill.repository_tools import LocalRepositoryTools
 
 
@@ -21,6 +22,79 @@ def test_summarizes_languages_roots_and_configuration(tmp_path):
         configuration_files=("package.json", "pyproject.toml"),
         tree=("docs/", "package.json", "pyproject.toml", "src/", "src/service/", "src/service/index.ts", "tests/", "tests/test_service.py"),
     )
+
+
+def test_builds_test_context_from_slice_and_related_tests(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "clamp.py").write_text(
+        "def clamp(value, low, high):\n    return max(low, min(value, high))\n"
+    )
+    (tmp_path / "tests" / "test_clamp.py").write_text(
+        "from src.clamp import clamp\n\ndef test_clamp():\n    assert clamp(12, 0, 10) == 10\n"
+    )
+    subtask = SubTask(
+        "clamp-upper-bound",
+        "Implement clamp behavior",
+        acceptance_criteria=("values above high return high",),
+    )
+    pack = ContextBuilder(LocalRepositoryTools(tmp_path)).build_test_context(subtask)
+
+    rendered = pack.render()
+
+    assert "values above high return high" in rendered
+    assert "test_clamp" in rendered
+    assert "return max(low, min(value, high))" not in rendered
+    assert pack.stage == "test"
+    assert pack.char_count <= pack.char_budget
+    assert all(fragment.source for fragment in pack.fragments)
+
+
+def test_builds_red_driven_implementation_context(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "clamp.py").write_text(
+        "def clamp(value, low, high):\n    return None\n"
+    )
+    (tmp_path / "tests" / "test_clamp.py").write_text(
+        "from src.clamp import clamp\n\ndef test_clamp():\n    assert clamp(12, 0, 10) == 10\n"
+    )
+    subtask = SubTask(
+        "clamp-upper-bound",
+        "Implement clamp behavior",
+        acceptance_criteria=("values above high return high",),
+    )
+    pack = ContextBuilder(LocalRepositoryTools(tmp_path)).build_implementation_context(
+        subtask,
+        VerificationTarget(("tests/test_clamp.py",)),
+        ("AssertionError: expected 10, got None",),
+    )
+
+    rendered = pack.render()
+
+    assert "AssertionError: expected 10, got None" in rendered
+    assert "assert clamp(12, 0, 10) == 10" in rendered
+    assert "def clamp(value, low, high):" in rendered
+    assert pack.stage == "implementation"
+    assert pack.char_count <= pack.char_budget
+
+
+def test_rejects_budget_too_small_for_required_context(tmp_path):
+    subtask = SubTask(
+        "small",
+        "Implement a behavior",
+        acceptance_criteria=("the behavior is observable",),
+    )
+
+    try:
+        ContextBuilder(LocalRepositoryTools(tmp_path)).build_test_context(
+            subtask,
+            char_budget=20,
+        )
+    except ValueError as error:
+        assert "required context exceeds character budget" in str(error)
+    else:
+        raise AssertionError("undersized context budget was accepted")
 
 
 def test_renders_compact_repository_map():
