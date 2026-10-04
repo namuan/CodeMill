@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from .decomposition import parse_decomposition, parse_decomposition_review
 from .models import (
+    ExpectedScope,
     RunEvent,
     RunResult,
     RunStatus,
@@ -32,6 +33,7 @@ class CodingHarness:
 
     def run(self, task: Task) -> RunResult:
         run_id = uuid4().hex
+        run_checkpoint = self.tools.patch_checkpoint()
         events = [self._event(run_id, "run_started")]
         events.append(self._event(run_id, "decompose_started"))
         try:
@@ -83,7 +85,12 @@ class CodingHarness:
         attempts = 0
 
         for subtask in subtasks:
-            result = self._run_subtask(run_id, subtask)
+            result = self._run_subtask(
+                run_id,
+                subtask,
+                run_checkpoint,
+                task.expected_scope,
+            )
             results.append(result)
             attempts += result.attempts
             events.extend(result.events)
@@ -151,7 +158,13 @@ class CodingHarness:
             tuple(results),
         )
 
-    def _run_subtask(self, run_id: str, task: SubTask) -> SubTaskResult:
+    def _run_subtask(
+        self,
+        run_id: str,
+        task: SubTask,
+        task_checkpoint: int,
+        task_scope: ExpectedScope,
+    ) -> SubTaskResult:
         events: list[RunEvent] = [self._event(run_id, "subtask_started", task.id)]
         checkpoint = self.tools.patch_checkpoint()
         attempts = 0
@@ -167,6 +180,8 @@ class CodingHarness:
                 test_patch,
                 task.expected_scope,
                 checkpoint,
+                task_scope,
+                task_checkpoint,
             )
             if not isinstance(test_target, VerificationTarget):
                 raise TypeError("test patch application must return a VerificationTarget")
@@ -219,6 +234,8 @@ class CodingHarness:
                 protected_tests,
                 task.expected_scope,
                 checkpoint,
+                task_scope,
+                task_checkpoint,
             )
             events.append(self._event(run_id, "patch_applied", task.id))
 
@@ -336,6 +353,8 @@ class CodingHarness:
                     protected_tests,
                     task.expected_scope,
                     checkpoint,
+                    task_scope,
+                    task_checkpoint,
                 )
                 events.append(self._event(run_id, "repair_patch_applied", task.id))
         except ScopeViolationError as error:

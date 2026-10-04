@@ -29,7 +29,7 @@ class FakeTools:
     def search_text(self, query): return ""
     def read_file(self, path, start=None, end=None): return ""
     def git_diff(self): return "diff"
-    def apply_test_patch(self, patch, scope=None, checkpoint=None):
+    def apply_test_patch(self, patch, *scope_args):
         self.patches.append(f"test:{patch}")
         self.active_test_patch = patch
         subtask_id = patch.rsplit(" ", 1)[-1]
@@ -53,7 +53,7 @@ class FakeTools:
     def changed_files_since(self, checkpoint):
         return tuple(sorted(set(self.patch_paths[checkpoint:])))
 
-    def apply_production_patch(self, patch, protected_tests, scope=None, checkpoint=None):
+    def apply_production_patch(self, patch, protected_tests, *scope_args):
         if protected_tests != self.test_protection:
             raise PermissionError("protected test set mismatch")
         if patch == "modify-protected-test":
@@ -426,7 +426,7 @@ def test_records_decomposition_errors_as_failed_runs():
 
 def test_escalates_scope_violations_before_mutating():
     class OverBudgetTools(FakeTools):
-        def apply_test_patch(self, patch, scope=None, checkpoint=None):
+        def apply_test_patch(self, patch, *scope_args):
             raise ScopeViolationError("patch exceeds changed-line budget")
 
     tools = OverBudgetTools()
@@ -442,7 +442,7 @@ def test_escalates_scope_violations_before_mutating():
 
 def test_records_patch_errors_on_the_subtask_result():
     class FailingTools(FakeTools):
-        def apply_production_patch(self, patch, protected_tests, scope=None, checkpoint=None):
+        def apply_production_patch(self, patch, protected_tests, *scope_args):
             raise OSError("patch rejected")
 
     result = CodingHarness(

@@ -48,6 +48,7 @@ class Task:
     objective: str
     acceptance_criteria: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
+    expected_scope: ExpectedScope = field(default_factory=ExpectedScope)
 
 
 @dataclass(frozen=True)

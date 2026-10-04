@@ -1,8 +1,17 @@
+import json
 import subprocess
 
 import pytest
 
-from codemill.models import ExpectedScope
+from codemill.harness import CodingHarness
+from codemill.models import (
+    ExpectedScope,
+    RunStatus,
+    Task,
+    VerificationFailureKind,
+    VerificationPurpose,
+    VerificationResult,
+)
 from codemill.repository_tools import LocalRepositoryTools, ScopeViolationError
 
 
@@ -39,6 +48,137 @@ index 0000000..0000000
 
     assert not (tmp_path / "tests" / "test_scope.py").exists()
     assert tools.git_status().clean
+
+
+def test_enforces_cumulative_task_budget_across_slices(tmp_path):
+    initialize_repository(tmp_path)
+    tools = LocalRepositoryTools(tmp_path)
+    run_checkpoint = tools.patch_checkpoint()
+    task_scope = ExpectedScope(max_files=3, max_changed_lines=2)
+    first_patch = """diff --git a/tests/test_first.py b/tests/test_first.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_first.py
+@@ -0,0 +1 @@
++def test_first(): pass
+"""
+    tools.apply_test_patch(
+        first_patch,
+        ExpectedScope(max_files=2, max_changed_lines=10),
+        run_checkpoint,
+        task_scope,
+        run_checkpoint,
+    )
+    tools.freeze_tests()
+    second_checkpoint = tools.patch_checkpoint()
+    second_patch = """diff --git a/tests/test_second.py b/tests/test_second.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_second.py
+@@ -0,0 +1,2 @@
++def test_second():
++    assert True
+"""
+
+    with pytest.raises(ScopeViolationError, match="changed-line budget"):
+        tools.apply_test_patch(
+            second_patch,
+            ExpectedScope(max_files=2, max_changed_lines=10),
+            second_checkpoint,
+            task_scope,
+            run_checkpoint,
+        )
+
+    assert not (tmp_path / "tests" / "test_second.py").exists()
+
+
+def test_harness_escalates_when_slices_exceed_task_budget(tmp_path):
+    initialize_repository(tmp_path)
+
+    class Model:
+        def decompose(self, task, tools):
+            subtasks = []
+            for identifier in ("first", "second"):
+                subtasks.append(
+                    {
+                        "id": identifier,
+                        "objective": f"complete {identifier}",
+                        "acceptance_criteria": [f"{identifier} behavior works"],
+                        "constraints": [],
+                        "depends_on": [],
+                        "expected_scope": {
+                            "max_files": 2,
+                            "max_changed_lines": 10,
+                            "allow_dependencies": False,
+                            "allow_public_api": False,
+                            "allow_schema_changes": False,
+                        },
+                    }
+                )
+            return json.dumps({"subtasks": subtasks})
+
+        def review_decomposition(self, task, subtasks, tools):
+            return '{"accepted": true, "findings": []}'
+
+        def locate_and_plan(self, task, tools):
+            return task.id
+
+        def create_test_patch(self, task, plan, tools):
+            return f"""diff --git a/tests/test_{task.id}.py b/tests/test_{task.id}.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/tests/test_{task.id}.py
+@@ -0,0 +1 @@
++def test_{task.id}(): pass
+"""
+
+        def create_patch(self, task, plan, tools, test_target, red_diagnostics):
+            return """diff --git a/src/module.py b/src/module.py
+index 0000000..0000000 100644
+--- a/src/module.py
++++ b/src/module.py
+@@ -1 +1 @@
+-value = 1
++value = 2
+"""
+
+        def review_implementation(self, task, diff, tools, test_target):
+            return '{"accepted": true, "findings": []}'
+
+        def repair_patch(self, task, diagnostics, tools, test_target):
+            raise AssertionError("repair should not be needed")
+
+    class Verifier:
+        def verify(self, purpose, target=None):
+            if purpose is VerificationPurpose.RED:
+                return VerificationResult(
+                    False,
+                    ("behavior absent",),
+                    VerificationFailureKind.EXPECTED_BEHAVIOR,
+                )
+            return VerificationResult(True)
+
+    result = CodingHarness(
+        Model(),
+        LocalRepositoryTools(tmp_path),
+        Verifier(),
+    ).run(
+        Task(
+            "complete two behaviors",
+            expected_scope=ExpectedScope(max_files=3, max_changed_lines=3),
+        )
+    )
+
+    assert result.status is RunStatus.ESCALATED
+    assert result.subtasks[0].status is RunStatus.VERIFIED
+    assert result.subtasks[1].status is RunStatus.ESCALATED
+    assert result.subtasks[1].diagnostics == (
+        "patch exceeds changed-line budget: 4 > 3",
+    )
+    assert not (tmp_path / "tests" / "test_second.py").exists()
 
 
 def test_rejects_public_api_change_when_scope_disallows_it(tmp_path):

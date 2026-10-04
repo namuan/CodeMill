@@ -458,7 +458,7 @@ Enforce budgets both per sub-task and cumulatively:
 }
 ```
 
-Hard violations reject or escalate. The local patch tool applies each slice's file and changed-line budgets cumulatively across its test, implementation, and repair patches before applying the candidate diff. It also rejects dependency-manifest, schema/migration, and public top-level definition changes unless the corresponding expected-scope permission is enabled. These checks are conservative path/diff heuristics, not semantic API analysis; violations escalate before candidate mutation. Binary and symlink patches remain denied. Sensitive metadata/secrets path rules and planned-scope intersection checks remain future hardening. Optionally require edits to intersect the sub-task's planned scope.
+Hard violations reject or escalate. `Task.expected_scope` enforces a run-wide file and changed-line ceiling; each `SubTask.expected_scope` applies an additional slice-local ceiling. The local patch tool applies slice budgets cumulatively across its test, implementation, and repair patches, and checks the task-wide budget across all patches in the run before applying each candidate diff. It also rejects dependency-manifest, schema/migration, and public top-level definition changes unless the corresponding expected-scope permission is enabled. These checks are conservative path/diff heuristics, not semantic API analysis; violations escalate before candidate mutation. Binary and symlink patches remain denied. Sensitive metadata/secrets path rules and planned-scope intersection checks remain future hardening.
 
 ## 10. Harness-enforced TDD
 

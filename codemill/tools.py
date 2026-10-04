@@ -23,6 +23,8 @@ class CodingTools(Protocol):
         patch: str,
         scope: ExpectedScope | None = None,
         checkpoint: int | None = None,
+        task_scope: ExpectedScope | None = None,
+        task_checkpoint: int | None = None,
     ) -> VerificationTarget: ...
     def discard_test_patch(self) -> None: ...
     def freeze_tests(self) -> ProtectedTests: ...
@@ -32,6 +34,8 @@ class CodingTools(Protocol):
         protected_tests: ProtectedTests,
         scope: ExpectedScope | None = None,
         checkpoint: int | None = None,
+        task_scope: ExpectedScope | None = None,
+        task_checkpoint: int | None = None,
     ) -> None: ...
 
 

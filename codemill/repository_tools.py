@@ -37,6 +37,8 @@ class LocalRepositoryTools:
         patch: str,
         scope: ExpectedScope | None = None,
         checkpoint: int | None = None,
+        task_scope: ExpectedScope | None = None,
+        task_checkpoint: int | None = None,
     ) -> VerificationTarget:
         if self._active_test_patch is not None:
             raise RuntimeError("a test patch is already awaiting RED verification")
@@ -47,6 +49,7 @@ class LocalRepositoryTools:
         if self._test_paths.intersection(paths):
             raise ValueError("test patch may not modify an already protected test")
         self._validate_scope(patch, scope, checkpoint)
+        self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
         self._active_test_patch = (patch, paths)
         self._patch_log.append(("test", patch))
@@ -79,6 +82,8 @@ class LocalRepositoryTools:
         protected_tests: ProtectedTests,
         scope: ExpectedScope | None = None,
         checkpoint: int | None = None,
+        task_scope: ExpectedScope | None = None,
+        task_checkpoint: int | None = None,
     ) -> None:
         if self._protected_tests is None or protected_tests != self._protected_tests:
             raise PermissionError("protected test set does not match the active run")
@@ -88,6 +93,7 @@ class LocalRepositoryTools:
         if any(self._is_test_path(path) for path in paths):
             raise PermissionError("production patch may not modify test files")
         self._validate_scope(patch, scope, checkpoint)
+        self._validate_scope(patch, task_scope, task_checkpoint)
         self._apply_git_patch(patch)
         if self._fingerprint(protected_tests.paths) != protected_tests.fingerprint:
             self._apply_git_patch(patch, reverse=True)
