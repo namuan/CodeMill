@@ -154,6 +154,7 @@ class ContextBuilder:
                 start = max(1, match["start_line"] - 5)
                 end = match["end_line"] + 8
                 text = self.tools.read_file(path, start, end)
+                actual_end = start + max(0, len(text.splitlines()) - 1)
                 fragments.append(
                     ContextFragment(
                         "test_convention",
@@ -163,7 +164,7 @@ class ContextBuilder:
                         60,
                         path,
                         start,
-                        end,
+                        actual_end,
                         (symbol,),
                     )
                 )
@@ -278,8 +279,9 @@ class ContextBuilder:
         fragments: list[ContextFragment],
         char_budget: int,
     ) -> ContextPack:
-        if isinstance(char_budget, bool) or char_budget < 1:
+        if isinstance(char_budget, bool) or not isinstance(char_budget, int) or char_budget < 1:
             raise ValueError("character budget must be a positive integer")
+        fragments = self._deduplicate(fragments)
         selected: list[ContextFragment] = []
         required = [fragment for fragment in fragments if fragment.required]
         optional = sorted(
@@ -301,6 +303,52 @@ class ContextBuilder:
         if pack.char_count > char_budget or header_length > char_budget:
             raise ValueError("required context exceeds character budget")
         return pack
+
+    @staticmethod
+    def _deduplicate(fragments: list[ContextFragment]) -> list[ContextFragment]:
+        deduplicated: list[ContextFragment] = []
+        for fragment in fragments:
+            match_index = next(
+                (
+                    index
+                    for index, existing in enumerate(deduplicated)
+                    if fragment.path is not None
+                    and fragment.path == existing.path
+                    and fragment.kind == existing.kind
+                    and fragment.start_line is not None
+                    and existing.start_line is not None
+                    and fragment.end_line is not None
+                    and existing.end_line is not None
+                    and max(fragment.start_line, existing.start_line)
+                    <= min(fragment.end_line, existing.end_line)
+                ),
+                None,
+            )
+            if match_index is None:
+                deduplicated.append(fragment)
+                continue
+
+            existing = deduplicated[match_index]
+            start = min(existing.start_line, fragment.start_line)
+            end = max(existing.end_line, fragment.end_line)
+            lines = {}
+            for item in (existing, fragment):
+                for offset, line in enumerate(item.text.splitlines(keepends=True)):
+                    lines.setdefault(item.start_line + offset, line)
+            text = "".join(lines[line] for line in range(start, end + 1) if line in lines)
+            deduplicated[match_index] = ContextFragment(
+                existing.kind,
+                text,
+                "; ".join(sorted({existing.why_selected, fragment.why_selected})),
+                existing.source,
+                max(existing.score, fragment.score),
+                existing.path,
+                start,
+                end,
+                tuple(sorted(set(existing.symbols) | set(fragment.symbols))),
+                existing.required or fragment.required,
+            )
+        return deduplicated
 
     @staticmethod
     def _render_length(stage: str, subtask_id: str, fragments: list[ContextFragment]) -> int:

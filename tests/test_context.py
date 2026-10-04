@@ -50,6 +50,31 @@ def test_builds_test_context_from_slice_and_related_tests(tmp_path):
     assert all(fragment.source for fragment in pack.fragments)
 
 
+def test_deduplicates_overlapping_test_context_ranges(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "bounds.py").write_text(
+        "def clamp(value):\n    return value\n\ndef bound(value):\n    return value\n"
+    )
+    (tmp_path / "tests" / "test_bounds.py").write_text(
+        "from src.bounds import bound, clamp\n\ndef test_bounds():\n"
+        "    assert clamp(1) == 1\n    assert bound(2) == 2\n"
+    )
+    subtask = SubTask(
+        "bounds",
+        "Use clamp and bound behavior",
+        acceptance_criteria=("clamp and bound preserve their inputs",),
+    )
+    pack = ContextBuilder(LocalRepositoryTools(tmp_path)).build_test_context(subtask)
+
+    test_fragments = [fragment for fragment in pack.fragments if fragment.kind == "test_convention"]
+
+    assert len(test_fragments) == 1
+    assert set(test_fragments[0].symbols) == {"bound", "clamp"}
+    assert "clamp(1)" in test_fragments[0].text
+    assert "bound(2)" in test_fragments[0].text
+
+
 def test_builds_red_driven_implementation_context(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "tests").mkdir()
