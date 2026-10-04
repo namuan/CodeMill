@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -288,6 +289,7 @@ class ContextBuilder:
             )
 
         symbols = self._symbols("\n".join(test_sources))
+        fragments.extend(self._missing_method_context(subtask))
         definition_count = 0
         for symbol in symbols:
             definitions = json.loads(self.tools.find_definitions(symbol))
@@ -332,6 +334,72 @@ class ContextBuilder:
             )
         )
         return self._pack("implementation", subtask, fragments, char_budget)
+
+    def _missing_method_context(self, subtask: SubTask) -> list[ContextFragment]:
+        task_text = " ".join((subtask.objective, *subtask.acceptance_criteria))
+        requested_methods = re.findall(
+            r"\b([A-Z][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)",
+            task_text,
+        )
+        fragments = []
+        for class_name, method_name in requested_methods:
+            class_definitions = json.loads(self.tools.find_definitions(class_name))
+            for definition in class_definitions:
+                if definition.get("kind") != "class":
+                    continue
+                path = definition["path"]
+                source = self.tools.read_file(path)
+                module = ast.parse(source)
+                class_node = next(
+                    (
+                        node
+                        for node in ast.walk(module)
+                        if isinstance(node, ast.ClassDef) and node.name == class_name
+                    ),
+                    None,
+                )
+                if class_node is None:
+                    continue
+                methods = [
+                    node
+                    for node in class_node.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                ]
+                if any(method.name == method_name for method in methods):
+                    continue
+                target_words = tuple(
+                    word for word in method_name.casefold().split("_") if len(word) > 1
+                )
+                related = sorted(
+                    (
+                        method
+                        for method in methods
+                        if any(word in method.name.casefold() for word in target_words)
+                    ),
+                    key=lambda method: method.lineno,
+                )
+                if not related:
+                    related = methods[:1]
+                for method in related[:2]:
+                    start = max(class_node.lineno, method.lineno - 2)
+                    end = min(method.end_lineno or method.lineno, method.lineno + 16)
+                    text = self.tools.read_file(path, start, end)
+                    fragments.append(
+                        ContextFragment(
+                            "related_class_context",
+                            text,
+                            f"Nearby methods in {class_name} help place the requested new method '{method_name}'.",
+                            "ast_grep_class_neighbors",
+                            85,
+                            path,
+                            start,
+                            end,
+                            (class_name, method_name, method.name),
+                        )
+                    )
+                if fragments:
+                    return fragments
+        return fragments
 
     def _subtask_fragment(self, subtask: SubTask) -> ContextFragment:
         lines = [f"Objective: {subtask.objective}", "Acceptance criteria:"]

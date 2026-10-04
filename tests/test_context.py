@@ -105,6 +105,36 @@ def test_builds_red_driven_implementation_context(tmp_path):
     assert pack.char_count <= pack.char_budget
 
 
+def test_implementation_context_includes_neighboring_method_for_new_class_api(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "tools.py").write_text(
+        "class LocalRepositoryTools:\n"
+        "    def git_diff(self):\n"
+        "        return ''\n\n"
+        "    def search_text(self, query):\n"
+        "        return query\n"
+    )
+    (tmp_path / "tests" / "test_tools.py").write_text(
+        "from src.tools import LocalRepositoryTools\n\n"
+        "def test_git_status():\n"
+        "    tools = LocalRepositoryTools()\n"
+        "    tools.git_status()\n"
+    )
+    task = SubTask("git-status", "Implement LocalRepositoryTools.git_status()")
+    pack = ContextBuilder(LocalRepositoryTools(tmp_path)).build_implementation_context(
+        task,
+        VerificationTarget(("tests/test_tools.py",)),
+        ("AssertionError: requested method missing",),
+    )
+
+    class_context = [fragment for fragment in pack.fragments if fragment.kind == "related_class_context"]
+
+    assert class_context
+    assert "def git_diff(self):" in class_context[0].text
+    assert "return query" not in class_context[0].text
+
+
 def test_rejects_budget_too_small_for_required_context(tmp_path):
     subtask = SubTask(
         "small",
