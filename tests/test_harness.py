@@ -270,7 +270,7 @@ def test_revises_test_module_after_invalid_red_and_retries_before_implementation
 
     class ModuleModel(FakeModel):
         def __init__(self):
-            super().__init__()
+            super().__init__((SubTask("ST-001", "Implement LocalRepositoryTools.git_status()"),))
             self.revised_modules = []
 
         def create_test_module(self, task, plan, tools):
@@ -299,6 +299,7 @@ def test_revises_test_module_after_invalid_red_and_retries_before_implementation
     assert "missing_api" in model.revised_modules[0][0]
     assert model.revised_modules[0][1] == ("ImportError: missing_api",)
     assert [purpose for purpose, _ in verifier.targets].count(VerificationPurpose.RED) == 2
+    assert verifier.targets[0][1].expected_missing_symbols == ("LocalRepositoryTools.git_status",)
     assert tools.discard_calls == 1
     assert "red_rejected" in [event.name for event in result.events]
     assert "test_module_revised" in [event.name for event in result.events]

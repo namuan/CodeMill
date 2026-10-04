@@ -174,9 +174,29 @@ class PytestVerifier:
             r"(?m)^E\s+([A-Za-z_][A-Za-z_0-9]*(?:Error|Exception)):",
             output,
         )
+        missing_api_names = tuple(
+            f"{class_name}.{method_name}"
+            for class_name, method_name in re.findall(
+                r"AttributeError: '([^']+)' object has no attribute '([^']+)'",
+                output,
+            )
+        )
+        failed_summaries = re.findall(
+            r"(?m)^FAILED\s+.+?::.+?\s+-\s+([A-Za-z_][A-Za-z_0-9]*)",
+            output,
+        )
+        missing_api_red = (
+            target is not None
+            and bool(missing_api_names)
+            and bool(target.expected_missing_symbols)
+            and all(name in target.expected_missing_symbols for name in missing_api_names)
+            and bool(failed_summaries)
+            and all(failure == "AttributeError" for failure in failed_summaries)
+            and all(error_type == "AttributeError" for error_type in error_types)
+        )
         has_non_assertion_error = any(error_type != "AssertionError" for error_type in error_types)
         return (
-            (test_assertion or did_not_raise)
+            (test_assertion or did_not_raise or missing_api_red)
             and not has_collection_error
-            and not has_non_assertion_error
+            and (not has_non_assertion_error or missing_api_red)
         )

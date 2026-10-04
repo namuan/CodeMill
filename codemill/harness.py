@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -590,6 +591,23 @@ class CodingHarness:
 
             if not isinstance(test_target, VerificationTarget):
                 raise TypeError("test patch application must return a VerificationTarget")
+            expected_symbols = tuple(
+                dict.fromkeys(
+                    (
+                        f"{class_name}.{method_name}"
+                        for class_name, method_name in re.findall(
+                            r"([A-Za-z_][A-Za-z_0-9]*)\.([A-Za-z_][A-Za-z_0-9]*)\s*\(",
+                            " ".join((task.objective, *task.acceptance_criteria)),
+                        )
+                    )
+                )
+            )
+            if expected_symbols:
+                test_target = VerificationTarget(
+                    test_target.paths,
+                    test_target.selectors,
+                    expected_symbols,
+                )
             events.append(self._event(run_id, "test_patch_applied", task.id))
             events.append(self._event(run_id, "red_verify_started", task.id))
             try:

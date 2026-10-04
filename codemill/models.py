@@ -80,6 +80,7 @@ class GitStatus:
 class VerificationTarget:
     paths: tuple[str, ...]
     selectors: tuple[str, ...] = ()
+    expected_missing_symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

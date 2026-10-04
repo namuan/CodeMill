@@ -34,6 +34,38 @@ def test_classifies_assertion_with_compact_pytest_trace_as_expected_red():
     )
 
 
+def test_accepts_attribute_error_for_explicitly_requested_missing_method():
+    output = (
+        "FAILED tests/test_status.py::test_status - AttributeError\n"
+        "tests/test_status.py:2: in test_status\n"
+        "    tools.git_status()\n"
+        "E   AttributeError: 'LocalRepositoryTools' object has no attribute 'git_status'"
+    )
+
+    assert PytestVerifier._is_assertion_failure(
+        output,
+        VerificationTarget(
+            ("tests/test_status.py",),
+            expected_missing_symbols=("LocalRepositoryTools.git_status",),
+        ),
+    )
+    assert not PytestVerifier._is_assertion_failure(
+        output,
+        VerificationTarget(
+            ("tests/test_status.py",),
+            expected_missing_symbols=("LocalRepositoryTools.other_method",),
+        ),
+    )
+    wrong_receiver = output.replace("'LocalRepositoryTools'", "'NoneType'")
+    assert not PytestVerifier._is_assertion_failure(
+        wrong_receiver,
+        VerificationTarget(
+            ("tests/test_status.py",),
+            expected_missing_symbols=("LocalRepositoryTools.git_status",),
+        ),
+    )
+
+
 def test_rejects_assertion_red_when_another_test_has_an_attribute_error():
     output = (
         "FAILED tests/test_feature.py::test_missing_method - AttributeError\n"
