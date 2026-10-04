@@ -159,16 +159,15 @@ class LlamaCppModelDriver:
         subtasks: tuple[SubTask, ...],
         tools: CodingTools,
     ) -> str:
-        context_tasks = subtasks or (
-            SubTask(
-                "SATISFACTION-REVIEW",
-                task.objective,
-                task.acceptance_criteria,
-                task.constraints,
-                (),
-                task.expected_scope,
-            ),
+        task_context = SubTask(
+            "TASK-REVIEW",
+            task.objective,
+            task.acceptance_criteria,
+            task.constraints,
+            (),
+            task.expected_scope,
         )
+        context_tasks = (task_context, *subtasks[:3])
         evidence_context = [
             {
                 "subtask_id": subtask.id,

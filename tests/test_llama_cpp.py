@@ -237,6 +237,43 @@ def test_locate_uses_structural_repository_context(repository):
         server.close()
 
 
+def test_decomposition_review_includes_task_level_implementation_evidence(repository):
+    (repository.root / "codemill").mkdir()
+    (repository.root / "codemill" / "harness.py").write_text(
+        "class CodingHarness:\n    def _run_subtask(self):\n        return 'discard test'\n"
+    )
+    server = ResponseServer(
+        [
+            response(
+                {
+                    "accepted": True,
+                    "findings": [],
+                    "already_satisfied": False,
+                    "evidence": [],
+                    "test_target": {"paths": [], "selectors": []},
+                }
+            )
+        ]
+    )
+    try:
+        driver = LlamaCppModelDriver(endpoint=server.endpoint)
+
+        driver.review_decomposition(
+            Task(
+                "Update CodingHarness._run_subtask in codemill/harness.py.",
+                ("Discard rejected focused tests.",),
+            ),
+            (SubTask("ST-001", "Handle failed focused verification"),),
+            repository,
+        )
+
+        request = server.requests[0][1]
+        payload = json.loads(request["messages"][1]["content"])
+        assert "return 'discard test'" in payload["evidence_context"][0]["locate_context"]
+    finally:
+        server.close()
+
+
 def test_implementation_call_uses_red_diagnostics_and_accepted_test(repository):
     server = ResponseServer([response({"patch": "diff --git a/src/greeting.py b/src/greeting.py"})])
     try:
