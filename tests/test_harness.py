@@ -308,6 +308,9 @@ def test_revises_test_module_after_invalid_red_and_retries_before_implementation
         def list_tree(self, path=".", depth=2):
             return ("tests/",) if path == "." else ()
 
+        def find_definitions(self, name):
+            return "[]"
+
         def apply_test_patch(self, patch, *scope_args):
             self.patches.append(f"test:{patch}")
             self.active_test_patch = patch

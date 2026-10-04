@@ -1,4 +1,5 @@
 import ast
+import json
 import re
 from pathlib import PurePosixPath
 
@@ -44,7 +45,7 @@ def prepare_test_module(
         raise ValueError(f"test module has invalid Python syntax: {error}") from error
 
     requested_methods = requested_class_methods(task, tools)
-    source = _normalize_guard_messages(source, module, requested_methods)
+    source = _normalize_guard_assertions(source, module, requested_methods)
     module = ast.parse(source)
     source_lines = source.splitlines(keepends=True)
     if source_lines and not source_lines[-1].endswith(("\n", "\r")):
@@ -56,6 +57,9 @@ def prepare_test_module(
             if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or not function.name.startswith(
                 "test_"
             ):
+                continue
+            if _has_class_guard(function, class_name, method_name):
+                guarded_symbols.add(f"{class_name}.{method_name}")
                 continue
             for statement in function.body:
                 call = next(
@@ -70,16 +74,10 @@ def prepare_test_module(
                 )
                 if call is None:
                     continue
-                receiver = call.func.value
-                if isinstance(receiver, ast.Call) and isinstance(receiver.func, (ast.Name, ast.Attribute)):
-                    receiver = receiver.func
-                receiver_text = ast.get_source_segment(source, receiver)
-                if not receiver_text:
-                    continue
                 line_index = statement.lineno - 1
                 indentation = source_lines[line_index][: len(source_lines[line_index]) - len(source_lines[line_index].lstrip())]
                 guard = (
-                    f"{indentation}assert callable(getattr({receiver_text}, {method_name!r}, None)), "
+                    f"{indentation}assert callable(getattr({class_name}, {method_name!r}, None)), "
                     f"{class_name}.{method_name} is missing\n"
                 )
                 insertions.setdefault(line_index, []).append(guard)
@@ -89,6 +87,7 @@ def prepare_test_module(
     for line_index in sorted(insertions, reverse=True):
         source_lines[line_index:line_index] = insertions[line_index]
 
+    imports = _requested_class_imports(requested_methods, module, tools)
     uses_pytest = any(isinstance(node, ast.Name) and node.id == "pytest" for node in ast.walk(module))
     imports_pytest = any(
         isinstance(node, ast.Import)
@@ -96,8 +95,10 @@ def prepare_test_module(
         for node in ast.walk(module)
     )
     if uses_pytest and not imports_pytest:
+        imports.append("import pytest")
+    if imports:
         insertion_index = _pytest_import_line(module)
-        source_lines.insert(insertion_index, "import pytest\n")
+        source_lines[insertion_index:insertion_index] = [f"{statement}\n" for statement in imports]
 
     prepared = "".join(source_lines)
     try:
@@ -169,7 +170,7 @@ def _new_test_path(subtask_id: str, tools: CodingTools) -> str:
         suffix += 1
 
 
-def _normalize_guard_messages(
+def _normalize_guard_assertions(
     source: str,
     module: ast.Module,
     requested_methods: tuple[tuple[str, str], ...],
@@ -177,22 +178,25 @@ def _normalize_guard_messages(
     owners = {method: class_name for class_name, method in requested_methods}
     replacements = []
     for node in ast.walk(module):
-        if not isinstance(node, ast.Assert) or node.msg is None:
+        if not isinstance(node, ast.Assert):
             continue
-        method = _assert_guard_method(node.test)
-        if method not in owners or (
-            isinstance(node.msg, ast.Constant) and isinstance(node.msg.value, str)
-        ):
+        guard = _assert_guard(node.test)
+        if guard is None or guard[1] not in owners:
             continue
-        start = _source_offset(source, node.msg.lineno, node.msg.col_offset)
-        end = _source_offset(source, node.msg.end_lineno, node.msg.end_col_offset)
-        replacements.append((start, end, repr(f"{owners[method]}.{method} is missing")))
+        class_name = owners[guard[1]]
+        start = _source_offset(source, node.lineno, node.col_offset)
+        end = _source_offset(source, node.end_lineno, node.end_col_offset)
+        message = repr(f"{class_name}.{guard[1]} is missing")
+        replacement = (
+            f"assert callable(getattr({class_name}, {guard[1]!r}, None)), {message}"
+        )
+        replacements.append((start, end, replacement))
     for start, end, replacement in sorted(replacements, reverse=True):
         source = source[:start] + replacement + source[end:]
     return source
 
 
-def _assert_guard_method(node: ast.AST) -> str | None:
+def _assert_guard(node: ast.AST) -> tuple[str, str] | None:
     for call in ast.walk(node):
         if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
             continue
@@ -204,11 +208,51 @@ def _assert_guard_method(node: ast.AST) -> str | None:
             and isinstance(lookup.func, ast.Name)
             and lookup.func.id == "getattr"
             and len(lookup.args) > 1
+            and isinstance(lookup.args[0], ast.Name)
             and isinstance(lookup.args[1], ast.Constant)
             and isinstance(lookup.args[1].value, str)
         ):
-            return lookup.args[1].value
+            return lookup.args[0].id, lookup.args[1].value
     return None
+
+
+def _has_class_guard(function: ast.AST, class_name: str, method_name: str) -> bool:
+    return any(
+        isinstance(node, ast.Assert)
+        and _assert_guard(node.test) == (class_name, method_name)
+        for node in ast.walk(function)
+    )
+
+
+def _requested_class_imports(
+    requested_methods: tuple[tuple[str, str], ...],
+    module: ast.Module,
+    tools: CodingTools | None,
+) -> list[str]:
+    imports = []
+    for class_name in dict.fromkeys(class_name for class_name, _ in requested_methods):
+        if any(isinstance(node, ast.ClassDef) and node.name == class_name for node in ast.walk(module)):
+            continue
+        if any(
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == class_name and alias.asname in {None, class_name} for alias in node.names)
+            for node in ast.walk(module)
+        ):
+            continue
+        if tools is None:
+            continue
+        definitions = json.loads(tools.find_definitions(class_name))
+        definition = next(
+            (item for item in definitions if item.get("kind") == "class"),
+            None,
+        )
+        if definition is None:
+            continue
+        module_name = PurePosixPath(definition["path"]).with_suffix("").as_posix().replace("/", ".")
+        if module_name.endswith(".__init__"):
+            module_name = module_name[: -len(".__init__")]
+        imports.append(f"from {module_name} import {class_name}")
+    return imports
 
 
 def _source_offset(source: str, line: int, column: int) -> int:

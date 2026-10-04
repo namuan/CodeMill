@@ -18,7 +18,7 @@ def test_adds_requested_api_guards_and_missing_pytest_import():
     prepared, guarded_symbols = prepare_test_module(source, task)
 
     assert "import pytest" in prepared
-    assert "assert callable(getattr(tools, 'git_status', None))" in prepared
+    assert "assert callable(getattr(LocalRepositoryTools, 'git_status', None))" in prepared
     assert prepared.index("assert callable(getattr") < prepared.index("with pytest.raises")
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 
@@ -34,7 +34,7 @@ def test_replaces_nonliteral_messages_on_requested_api_guards():
 
     prepared, guarded_symbols = prepare_test_module(source, task)
 
-    assert "assert callable(getattr(tools, 'git_status', None)), 'LocalRepositoryTools.git_status is missing'" in prepared
+    assert "assert callable(getattr(LocalRepositoryTools, 'git_status', None)), 'LocalRepositoryTools.git_status is missing'" in prepared
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 
 
@@ -54,7 +54,8 @@ def test_resolves_class_from_explicit_source_path(tmp_path):
 
     prepared, guarded_symbols = prepare_test_module(source, task, tools)
 
-    assert "assert callable(getattr(tools, 'git_status', None))" in prepared
+    assert "assert callable(getattr(LocalRepositoryTools, 'git_status', None))" in prepared
+    assert "from src.tools import LocalRepositoryTools" in prepared
     assert guarded_symbols == ("LocalRepositoryTools.git_status",)
 
 
