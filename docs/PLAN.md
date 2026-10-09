@@ -47,13 +47,13 @@ The first end-to-end acceptance test uses a fixture repository and a real llama.
 
 The initial concrete verifier targets Python/pytest, and structural retrieval currently defaults to Python. Keep the harness contracts language- and platform-neutral where practical, and add language/runtime and operating-system adapters after the first end-to-end prototype works. Expansion should cover repository mapping, targeted test selection, regression commands, patch/path handling, process execution, and CI fixtures across supported languages and platforms rather than relying on one global test command.
 
-## Phase 0 — Decomposition-aware bootstrap
+## Phase 0 — Decomposition-aware bootstrap — DONE
 
 Define task, sub-task, dependency, result, model, tool, and verifier contracts. Implement decomposition, dependency validation and deterministic scheduling, bounded repair, structured run events, and final whole-task verification.
 
 **Exit:** fake-model tests demonstrate decomposition, graph validation/scheduling, repair, failure handling, and final verification. This is an internal foundation, not completion of v0.
 
-## Phase 1 — Structured vertical-slice decomposition
+## Phase 1 — Structured vertical-slice decomposition — DONE
 
 Replace free-form decomposition with schema-constrained output. A sub-task must contain stable ID, observable behavior, acceptance criteria, constraints, dependency IDs, and expected scope/change budget.
 
@@ -73,7 +73,7 @@ The machine validator enforces schema completeness, field types, non-empty behav
 
 **Exit:** structured model output is parsed and validated before execution; malformed plans cannot mutate the repository; graph scheduling is deterministic; semantic quality concerns produce a review/escalation outcome.
 
-## Phase 2 — Harness-enforced TDD
+## Phase 2 — Harness-enforced TDD — DONE
 
 Make TDD a state-machine invariant rather than a prompt convention.
 
@@ -91,7 +91,7 @@ For every sub-task:
 
 A sub-task becomes VERIFIED only after RED was demonstrated, GREEN was reached, regression checks passed, and minimality review accepted the diff.
 
-## Phase 3 — Local repository tools
+## Phase 3 — Local repository tools — DONE
 
 Use **ast-grep as the primary code retrieval engine**. Its structural/AST-aware queries and machine-readable output provide deterministic evidence about code definitions, declarations, calls, imports, tests, and nearby syntax without exposing a shell to the model.
 
@@ -114,7 +114,7 @@ Mutation and execution remain harness-only capabilities: validated patch applica
 
 Guardrails include repository-root sandboxing, path traversal prevention, patch budgets, sensitive-path deny rules, no arbitrary shell, and protection preventing implementation turns from modifying the accepted test. ast-grep is retrieval-only initially; CodeMill does not use its rewrite capability.
 
-## Phase 4 — Verification pipeline
+## Phase 4 — Verification pipeline — DONE
 
 Separate verification purposes:
 
@@ -126,7 +126,7 @@ Separate verification purposes:
 
 Normalize failures before returning them to REPAIR.
 
-## Phase 5 — Progressive context engine
+## Phase 5 — Progressive context engine — MINIMUM V0 COMPLETE
 
 Build context **per vertical slice and per TDD stage** rather than constructing one large context pack up front.
 
@@ -146,7 +146,7 @@ After a sub-task verifies, run **COMPACT**. Persist a concise verified-slice rec
 
 Learnings are retrieved on demand rather than injected globally. Each learning carries kind, statement, file/symbol/concept scope, evidence/provenance, originating sub-task/repository revision, confidence, and supersession state. Current repository evidence outranks stored learnings; newer verified facts can supersede older entries.
 
-## Phase 6 — llama.cpp model adapter
+## Phase 6 — llama.cpp model adapter — DONE
 
 This phase is required for v0, not a post-v0 enhancement. Use a locally managed llama.cpp `llama-server` as the first inference backend. The initial endpoint is hard-coded to `http://127.0.0.1:9090`; the user starts and owns the server and model selection/loading.
 
@@ -156,13 +156,13 @@ Keep operations specialised: **DECOMPOSE, LOCATE, WRITE_TEST, IMPLEMENT, REPAIR,
 
 The implementation instruction is intentionally narrow: make the accepted failing test pass with the smallest production-code change; do not modify the test; do not implement behavior not required by the slice.
 
-## Phase 7 — Change budgets and escalation
+## Phase 7 — Change budgets and escalation — DONE
 
 Apply budgets per slice and across the task. A vertical slice may legitimately touch multiple layers; budgets must not force horizontal decomposition.
 
 Reject or escalate when the implementation changes the protected test, exceeds scope, introduces unjustified dependencies/APIs/schema changes, cannot demonstrate RED, repeatedly fails GREEN, or requires unsupported capabilities.
 
-## Phase 8 — Evaluation
+## Phase 8 — Evaluation — INITIAL V0 COMPLETE
 
 Build tasks from historical commits and evaluate the full decomposition-to-TDD workflow. The dataset loader accepts JSONL cases pinned to a full repository commit SHA, validates task acceptance criteria, rejects duplicate IDs/path escapes, refuses dirty repositories, and verifies base plus optional reference commits exist. Reference commits are diagnostic targets, not correctness authorities. `BenchmarkRunner` rechecks the repository, creates a detached disposable worktree at the pinned base, verifies the harness targets that worktree, records run metrics, and removes the worktree after each case. `codemill-benchmark` writes a machine-readable report with model identifier, task and revision metadata, traces, outcomes, and aggregate metrics. The curated set covers context-fragment deduplication, Git status reporting, and invalid-RED test cleanup. An initial exploratory run is complete; its limitations and findings are recorded in `docs/TRACE_ANALYSIS.md`. Broader retrieval-ranking analysis, GPU time, and monetary cost remain optional follow-ups. Stronger-model comparison is not a project requirement.
 
@@ -170,7 +170,7 @@ Track task success plus: slice count/depth, RED validity, tests that unexpectedl
 
 Model comparisons are optional. If requested, compare models on identical cases with equivalent verification.
 
-## Phase 9 — Learning from traces
+## Phase 9 — Learning from traces — IN PROGRESS
 
 Analyze decomposition, test-generation, implementation, and repair failures separately before considering trajectory distillation, SFT/LoRA, or verifier-driven optimization. The initial stage-by-stage analysis is in `docs/TRACE_ANALYSIS.md`; benchmark reports now include deterministic stage/category diagnosis from trace evidence. Recent changes let the current model generate a new test file and reach valid RED, but test assertions can still drift from acceptance criteria and production patch revisions have not succeeded. Do not generalize trace learnings or train on this sample; gather successful historical traces and later-stage outcomes first.
 
@@ -178,15 +178,23 @@ Fine-tuning is an optimization step, not the starting architecture.
 
 ## Near-term backlog
 
-1. Define the user invocation, repository cleanliness/worktree policy, result statuses, and artifact bundle.
-2. Formal SubTask/decomposition schema, graph validator, deterministic scheduler, and invalid-plan escalation.
-3. TDD state model and verifier contracts for expected RED, focused GREEN, regression, and final verification.
-4. Protected-test patch policy, validated diff application, allowed-path and change-budget enforcement.
-5. Harness-controlled repository tools and an explicit v0 sandbox/subprocess security boundary.
-6. Structured event trace and artifact writer keyed by task and sub-task; minimum context construction for each model operation.
-7. llama.cpp adapter at `http://127.0.0.1:9090`, including real request/response handling and failure behavior.
-8. Minimal progressive retrieval (ast-grep for source structure, rg textual fallback); advanced provenance ranking and scoped learning may follow.
-9. Fixture-repository end-to-end test with a real llama.cpp server/model, plus deterministic fake-model unit tests.
-10. Run the complete task workflow and inspect the resulting bundle, diff, and verification evidence.
+- [x] Define the user invocation, repository cleanliness/worktree policy, result statuses, and artifact bundle.
+- [x] Formal SubTask/decomposition schema, graph validator, deterministic scheduler, and invalid-plan escalation.
+- [x] TDD state model and verifier contracts for expected RED, focused GREEN, regression, and final verification.
+- [x] Protected-test policy, validated diff application, allowed-path checks, and change budgets.
+- [x] Harness-controlled repository tools and an explicit v0 sandbox/subprocess security boundary.
+- [x] Structured event trace and artifact writer keyed by task and sub-task; minimum context construction for each model operation.
+- [x] llama.cpp adapter at `http://127.0.0.1:9090`, including real request/response handling and failure behavior.
+- [x] Minimal progressive retrieval (ast-grep for source structure, rg textual fallback); advanced provenance ranking and scoped learning remain deferred.
+- [x] Fixture-repository end-to-end test with a real llama.cpp server/model, plus deterministic fake-model unit tests. The real-model test passed previously; the latest run failed on a public-API scope violation, so repeatability remains an active concern.
+- [x] Ran the complete workflow and inspected artifacts, diff, and verification evidence. Recent runs expose unresolved test-quality, patch-application, and scope-control failures; see `docs/TRACE_ANALYSIS.md`.
 
-Persistent resume, a durable scoped learning store, sophisticated semantic decomposition scoring, and benchmark/evaluation infrastructure are valuable follow-ups, but should not block the first v0 unless needed for safe, reproducible runs.
+## Recommended next work
+
+1. **Make test generation acceptance-driven.** Generate a structured test intent mapped to the current sub-task's acceptance criteria before generating code. Reject unsupported imports, invented result shapes, and tests for behavior assigned to another slice.
+2. **Replace raw implementation diffs with structured edits.** Ask the model for exact source anchors and replacement text; have the harness validate the anchors and synthesize the diff. Keep existing path, scope, and change-budget enforcement authoritative.
+3. **Diagnose the live scope violation.** Inspect the rejected proposed change and determine whether the model violated the task's API constraint or the scope checker rejected a valid patch. Do not weaken the guard without evidence.
+4. **Rerun the same current-model cases after these changes.** Prioritize varied test-generation cases and traces that reach implementation and repair; report stage-specific outcomes and retain artifacts.
+5. **Defer training and persistent learning.** Do not start SFT/LoRA or build a durable learning store until a broader set of successful and later-stage traces supports it. Model comparisons remain optional.
+
+Persistent resume, a durable scoped learning store, sophisticated semantic decomposition scoring, and broader language/platform support remain follow-ups; they do not block the initial v0 prototype.
